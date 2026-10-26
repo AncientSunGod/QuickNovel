@@ -209,9 +209,13 @@ object ExtensionJsRuntime {
                         });
                       },
                       fetchText: function(url, init) {
-                        return this.fetchApi(url, init).then(function(response) {
-                          return response.ok ? response.text() : '';
-                        }).catch(function() { return ''; });
+                        try {
+                          return this.fetchApi(url, init).then(function(response) {
+                            return response.ok ? response.text() : '';
+                          }).catch(function() { return ''; });
+                        } catch (error) {
+                          return Promise.resolve('');
+                        }
                       }
                     };
                     if (name === 'cheerio') {
