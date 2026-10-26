@@ -270,10 +270,21 @@ class Apis {
             val hashSet = HashSet<String>()
             hashSet.addAll(apis.map { it.name })
 
-            val set = settingsManager.getStringSet(
-                this.getString(R.string.search_providers_list_key),
-                hashSet
-            )?.toHashSet() ?: hashSet
+            val providerKey = this.getString(R.string.search_providers_list_key)
+            val set = settingsManager.getStringSet(providerKey, hashSet)?.toHashSet() ?: hashSet
+            val installedNames = runCatching {
+                ExtensionRepositoryManager.getInstalledExtensions(applicationContext).map { it.name }.toSet()
+            }.getOrDefault(emptySet())
+            val seenKey = "extension_provider_names_seen"
+            val previouslySeen = settingsManager.getStringSet(seenKey, emptySet()).orEmpty()
+            val newlyInstalled = installedNames - previouslySeen
+            if (newlyInstalled.isNotEmpty()) {
+                set.addAll(newlyInstalled)
+                settingsManager.edit()
+                    .putStringSet(providerKey, set)
+                    .putStringSet(seenKey, previouslySeen + installedNames)
+                    .apply()
+            }
 
             val activeLangs = getApiProviderLangSettings()
             val list = HashSet<String>()
