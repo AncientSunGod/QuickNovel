@@ -37,7 +37,7 @@ class ExtensionMainAPI internal constructor(
                 val title = item.text("name").ifBlank { item.text("title") }
                 val path = item.text("path").ifBlank { item.text("url") }
                 if (title.isBlank() || path.isBlank()) continue
-                val resolved = resolvePath(path, isNovel = true)
+                val resolved = resolvePath(path)
                 val realUrl = resolveHttpUrl(resolved) ?: continue
                 val poster = item.text("cover").ifBlank { item.text("posterUrl") }
                     .takeIf { it.isNotBlank() }
@@ -67,7 +67,7 @@ class ExtensionMainAPI internal constructor(
             val chapter = chapters.optJSONObject(index) ?: continue
             val chapterPath = chapter.text("path").ifBlank { chapter.text("url") }
             if (chapterPath.isBlank()) continue
-            val resolved = resolveHttpUrl(resolvePath(chapterPath, isNovel = false)) ?: continue
+            val resolved = resolveHttpUrl(resolvePath(chapterPath)) ?: continue
             chapter.put("url", internalUrl(resolved, chapterPath))
         }
         ExtensionResponseMapper.parseNovel(
@@ -89,11 +89,14 @@ class ExtensionMainAPI internal constructor(
             ?: ExtensionJsRuntime.execute(extension, operation, args.toString())
                 .getOrNull()?.json
 
-    private fun resolvePath(path: String, isNovel: Boolean): String {
+    private fun resolvePath(path: String): String {
         if (path.startsWith("https://", true) || path.startsWith("http://", true)) return path
-        val resolved = execute("resolveUrl", JSONArray().put(path).put(isNovel))
-            ?.let { runCatching { JSONTokener(it).nextValue() as? String }.getOrNull() }
-        return resolved?.takeIf { it.isNotBlank() } ?: path
+        // The opaque LNReader path is stored in our URL fragment below. Resolving it here
+        // only needs a same-site placeholder URL; calling the JS bundle's resolveUrl once
+        // per search result would re-parse/re-execute the entire bundle dozens of times.
+        return runCatching {
+            URI("$mainUrl/").resolve(path.trimStart('/')).normalize().toString()
+        }.getOrDefault("$mainUrl/")
     }
 
     private fun resolveHttpUrl(value: String): String? = runCatching {
