@@ -139,4 +139,33 @@ class ExtensionResponseMapperTest {
         assertEquals(1, result.data.size)
         assertEquals("Safe", result.data.single().name)
     }
+    @Test
+    fun mapsRealLnReaderNamePathCoverAndChapterFields() {
+        val search = ExtensionResponseMapper.parseSearchResults(
+            json = """[{"name":"Chikari Story","path":"story-slug","cover":"https://chikari.moe/cover.jpg"}]""",
+            apiName = "Chikari",
+            baseUrl = "https://chikari.moe/",
+        )
+        assertEquals("Chikari Story", search.single().name)
+        assertEquals("https://chikari.moe/story-slug", search.single().url)
+        assertEquals("https://chikari.moe/cover.jpg", search.single().posterUrl)
+
+        val novel = ExtensionResponseMapper.parseNovel(
+            json = """{
+              "path":"story-slug","name":"Chikari Story","cover":"/cover.jpg",
+              "author":"Writer","summary":"Summary","genres":"Fantasy, Adventure",
+              "chapters":[{"name":"Chapter 1","path":"api/novels/story-slug/chapters/1/read","releaseTime":"2026-10-01"}]
+            }""",
+            apiName = "Chikari",
+            baseUrl = "https://chikari.moe/",
+            requestedUrl = "https://chikari.moe/novels/story-slug",
+        )
+        assertEquals("Chikari Story", novel.name)
+        assertEquals("https://chikari.moe/story-slug", novel.url)
+        assertEquals("Summary", novel.synopsis)
+        assertEquals(listOf("Fantasy", "Adventure"), novel.tags)
+        assertEquals("https://chikari.moe/api/novels/story-slug/chapters/1/read", novel.data.single().url)
+        assertEquals("2026-10-01", novel.data.single().dateOfRelease)
+    }
+
 }
