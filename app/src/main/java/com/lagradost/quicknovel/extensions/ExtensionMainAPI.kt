@@ -1,5 +1,6 @@
 package com.lagradost.quicknovel.extensions
 
+import android.content.Context
 import com.lagradost.quicknovel.MainAPI
 import com.lagradost.quicknovel.SearchResponse
 import com.lagradost.quicknovel.StreamResponse
@@ -22,6 +23,7 @@ import java.nio.charset.StandardCharsets
  */
 class ExtensionMainAPI internal constructor(
     private val extension: InstalledExtension,
+    private val context: Context? = null,
     private val operationOverride: ((String, JSONArray) -> String?)? = null,
 ) : MainAPI() {
     override val name: String = extension.name
@@ -86,7 +88,7 @@ class ExtensionMainAPI internal constructor(
 
     private fun execute(operation: String, args: JSONArray): String? =
         operationOverride?.invoke(operation, args)
-            ?: ExtensionJsRuntime.execute(extension, operation, args.toString())
+            ?: ExtensionJsRuntime.execute(extension, operation, args.toString(), storageContext = context)
                 .getOrNull()?.json
 
     private fun resolvePath(path: String): String {
