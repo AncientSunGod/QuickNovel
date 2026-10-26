@@ -14,11 +14,6 @@ class ExtensionRepositoryManagerTest {
         )
         assertTrue(
             ExtensionRepositoryManager.isValidManifestUrl(
-                "http://localhost:8080/plugins.min.json"
-            )
-        )
-        assertTrue(
-            ExtensionRepositoryManager.isValidManifestUrl(
                 "https://example.org/path/PLUGINS.MIN.JSON"
             )
         )
@@ -39,6 +34,26 @@ class ExtensionRepositoryManagerTest {
         assertFalse(
             ExtensionRepositoryManager.isValidManifestUrl(
                 "https://user:password@example.org/plugins.min.json"
+            )
+        )
+        assertFalse(
+            ExtensionRepositoryManager.isValidManifestUrl(
+                "http://localhost:8080/plugins.min.json"
+            )
+        )
+        assertFalse(
+            ExtensionRepositoryManager.isValidManifestUrl(
+                "http://127.0.0.1/plugins.min.json"
+            )
+        )
+        assertFalse(
+            ExtensionRepositoryManager.isValidManifestUrl(
+                "http://192.168.1.20/plugins.min.json"
+            )
+        )
+        assertFalse(
+            ExtensionRepositoryManager.isValidManifestUrl(
+                "http://[::1]/plugins.min.json"
             )
         )
         assertFalse(
