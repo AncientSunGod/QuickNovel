@@ -1,6 +1,5 @@
 package com.lagradost.quicknovel.extensions
 
-import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -29,7 +28,7 @@ class ExtensionMainAPITest {
                     "resolveUrl" -> {
                         val path = args.getString(0)
                         if (args.optBoolean(1)) {
-                            JSONObjectQuote.quote("https://chikari.moe/novels/$path")
+                            org.json.JSONObject.quote("https://chikari.moe/novels/$path")
                         } else {
                             JSONObjectQuote.quote("https://chikari.moe/$path")
                         }
@@ -60,11 +59,4 @@ class ExtensionMainAPITest {
         }
     }
 
-    private object JSONObjectQuote {
-        fun quote(value: String): String = "\"" + value
-            .replace("\\\\", "\\\\\\\\")
-            .replace("\"", "\\\\"")
-            .replace("\n", "\\\\n")
-            .replace("\r", "\\\\r") + "\""
-    }
 }
