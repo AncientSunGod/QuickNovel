@@ -167,6 +167,26 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsHtmlparser2ParserCallbacksForCommonHtmlScrapers() {
+        val (extension, file) = extension(
+            "var Parser = require('htmlparser2').Parser; " +
+                "module.exports = { searchNovels: function() { " +
+                "var items = [], current = {}, inAnchor = false; " +
+                "var parser = new Parser({ " +
+                "onopentag:function(name,attrs){if(name==='a'){current.path=attrs.href;inAnchor=true;}}, " +
+                "ontext:function(text){if(inAnchor)current.name=(current.name||'')+text;}, " +
+                "onclosetag:function(name){if(name==='a'){items.push(current);current={};inAnchor=false;}} " +
+                "}); parser.write('<a href=/novel>Sample Novel</a>'); parser.end(); return items; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("""[{"path":"/novel","name":"Sample Novel"}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun supportsCommonDayjsDateParsingFormattingAndSubtraction() {
         val (extension, file) = extension(
             "var dayjs = require('dayjs').default; " +
