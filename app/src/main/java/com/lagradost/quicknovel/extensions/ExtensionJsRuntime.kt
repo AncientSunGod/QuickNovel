@@ -71,7 +71,7 @@ object ExtensionJsRuntime {
             val approvedHost = URI(extension.site).host?.lowercase()
                 ?: throw IllegalArgumentException("Extension site URL is invalid.")
             var fetchCount = 0
-            ScriptableObject.putProperty(scope, "__qnFetch", object : BaseFunction() {
+            val fetchFunction = object : BaseFunction() {
                 override fun call(
                     context: Context,
                     callScope: Scriptable,
@@ -93,7 +93,10 @@ object ExtensionJsRuntime {
                         .put("body", response.body)
                         .toString()
                 }
-            })
+            }
+            fetchFunction.parentScope = scope
+            fetchFunction.prototype = ScriptableObject.getFunctionPrototype(scope)
+            ScriptableObject.putProperty(scope, "__qnFetch", fetchFunction)
             val compatibilityBootstrap = """
                 (function() {
                   function QNPromise(executor) {
