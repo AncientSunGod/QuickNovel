@@ -3,6 +3,7 @@ package com.lagradost.quicknovel.extensions
 import com.lagradost.quicknovel.ChapterData
 import com.lagradost.quicknovel.SearchResponse
 import com.lagradost.quicknovel.StreamResponse
+import com.lagradost.quicknovel.setStatus
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
@@ -102,12 +103,13 @@ object ExtensionResponseMapper {
             }
         }
 
-        return StreamResponse(
+        val response = StreamResponse(
             url = novelUrl,
             name = title,
             data = chapters,
             apiName = apiName,
-            author = item.safeText("author").takeIf { it.isNotBlank() },
+            author = item.safeText("author").ifBlank { item.safeText("artist") }
+                .takeIf { it.isNotBlank() },
             posterUrl = item.safeText("posterUrl")
                 .ifBlank { item.safeText("cover") }
                 .takeIf { it.isNotBlank() }
@@ -120,6 +122,8 @@ object ExtensionResponseMapper {
                 ?: item.safeText("genres").split(",").map { it.trim() }
                     .filter { it.isNotBlank() }.takeIf { it.isNotEmpty() },
         )
+        response.setStatus(item.safeText("status").ifBlank { item.safeText("releaseStatus") })
+        return response
     }
 
     private fun JSONObject.safeText(key: String): String =
@@ -129,7 +133,12 @@ object ExtensionResponseMapper {
         if (this == null) return null
         return buildList {
             for (index in 0 until minOf(length(), 100)) {
-                val value = optString(index, "").take(MAX_TEXT_LENGTH).trim()
+                val objectValue = optJSONObject(index)
+                val value = if (objectValue != null) {
+                    objectValue.safeText("name").ifBlank { objectValue.safeText("title") }
+                } else {
+                    optString(index, "").take(MAX_TEXT_LENGTH).trim()
+                }
                 if (value.isNotBlank()) add(value)
             }
         }.takeIf { it.isNotEmpty() }
