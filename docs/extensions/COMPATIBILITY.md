@@ -66,7 +66,7 @@ An in-process Rhino execution core now exists in `ExtensionJsRuntime`. It can ex
 
 **This does not make LNReader repository bundles runnable yet.** Real bundles may depend on Metro's module registry, asynchronous APIs, LNReader's helper modules, and Cheerio/htmlparser2 behavior. Those imports deliberately fail closed in this prototype. The engine also runs in the app process, so instruction limits alone do not prevent memory-exhaustion attacks; it must not be wired to downloaded third-party bundles as a production runtime.
 
-Next required work remains: implement and test the actual LNReader bundle/module format, a compatible asynchronous fetch bridge, HTML parsing compatibility, and an isolation strategy that can stop a runaway operation without endangering the app. Then connect the tested adapter to `MainAPI` and validate search, novel details, and chapter reading against a real repository extension. Until that end-to-end test passes, extensions remain catalogued/installed but inactive.
+Next required work is to verify the Android build and test the complete search → details → chapter flow in the app. The adapter is connected to `MainAPI`, but compatibility remains partial and the in-process runtime is not a production security boundary.
 
 ### HTML parser prototype
 
