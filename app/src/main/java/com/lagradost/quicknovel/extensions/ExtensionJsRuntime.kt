@@ -1,12 +1,14 @@
 package com.lagradost.quicknovel.extensions
 
 import org.json.JSONArray
+import org.json.JSONObject
 import org.mozilla.javascript.BaseFunction
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.ContextFactory
 import org.mozilla.javascript.Scriptable
 import org.mozilla.javascript.ScriptableObject
 import java.io.File
+import java.net.URI
 
 /**
  * Instruction-budgeted JavaScript execution for extension bundles.
@@ -64,19 +66,105 @@ object ExtensionJsRuntime {
                 ScriptableObject.getProperty(scope, "module") as Scriptable,
                 "exports"
             ))
-            ScriptableObject.putProperty(scope, "require", object : BaseFunction() {
+            val approvedHost = URI(extension.site).host?.lowercase()
+                ?: throw IllegalArgumentException("Extension site URL is invalid.")
+            var fetchCount = 0
+            ScriptableObject.putProperty(scope, "__qnFetch", object : BaseFunction() {
                 override fun call(
                     context: Context,
                     callScope: Scriptable,
                     thisObj: Scriptable,
                     args: Array<out Any>,
                 ): Any {
-                    val moduleName = args.firstOrNull()?.toString().orEmpty()
-                    throw IllegalArgumentException(
-                        "Extension import '$moduleName' is not available in the current compatibility layer."
-                    )
+                    fetchCount += 1
+                    require(fetchCount <= 20) { "Extension exceeded the 20-request operation limit." }
+                    val requestedUrl = args.firstOrNull()?.toString().orEmpty()
+                    require(requestedUrl.isNotBlank()) { "Extension fetch URL is missing." }
+                    val response = ExtensionHttpClient.getText(
+                        requestedUrl,
+                        allowedHosts = setOf(approvedHost),
+                    ).getOrThrow()
+                    return JSONObject()
+                        .put("url", response.url)
+                        .put("statusCode", response.statusCode)
+                        .put("contentType", response.contentType)
+                        .put("body", response.body)
+                        .toString()
                 }
             })
+            val compatibilityBootstrap = """
+                (function() {
+                  function QNPromise(executor) {
+                    var self = this;
+                    self.state = 0; self.value = void 0; self.handlers = [];
+                    function settle(state, value) {
+                      if (self.state !== 0) return;
+                      if (value === self) return settle(2, new TypeError('Promise cycle'));
+                      if (value && typeof value.then === 'function') {
+                        try { return value.then(resolve, reject); } catch (e) { return reject(e); }
+                      }
+                      self.state = state; self.value = value;
+                      self.handlers.forEach(run);
+                    }
+                    function resolve(value) { settle(1, value); }
+                    function reject(error) { settle(2, error); }
+                    function run(handler) {
+                      var callback = self.state === 1 ? handler.ok : handler.fail;
+                      if (typeof callback !== 'function') {
+                        (self.state === 1 ? handler.resolve : handler.reject)(self.value); return;
+                      }
+                      try { handler.resolve(callback(self.value)); } catch (e) { handler.reject(e); }
+                    }
+                    self.then = function(ok, fail) {
+                      return new QNPromise(function(resolveNext, rejectNext) {
+                        var handler = {ok:ok, fail:fail, resolve:resolveNext, reject:rejectNext};
+                        if (self.state === 0) self.handlers.push(handler); else run(handler);
+                      });
+                    };
+                    self.catch = function(fail) { return self.then(null, fail); };
+                    try { executor(resolve, reject); } catch (e) { reject(e); }
+                  }
+                  QNPromise.resolve = function(value) {
+                    return new QNPromise(function(resolve) { resolve(value); });
+                  };
+                  QNPromise.reject = function(error) {
+                    return new QNPromise(function(resolve, reject) { reject(error); });
+                  };
+                  this.Promise = QNPromise;
+                  this.require = function(name) {
+                    if (name === '@libs/fetch') return {
+                      fetchApi: function(url, init) {
+                        if (init && init.method && String(init.method).toUpperCase() !== 'GET')
+                          throw new Error('Only GET requests are supported by this extension bridge.');
+                        return Promise.resolve(JSON.parse(__qnFetch(String(url)))).then(function(r) {
+                          return {
+                            url: r.url, status: r.statusCode, ok: r.statusCode >= 200 && r.statusCode < 300,
+                            text: function() { return Promise.resolve(r.body); },
+                            json: function() { return Promise.resolve(JSON.parse(r.body)); },
+                            headers: { get: function(key) {
+                              return String(key).toLowerCase() === 'content-type' ? r.contentType : null;
+                            } }
+                          };
+                        });
+                      }
+                    };
+                    if (name === '@libs/defaultCover') return {defaultCover: ''};
+                    if (name === '@libs/novelStatus') return {
+                      NovelStatus: {Ongoing:'ongoing', Completed:'completed', Paused:'paused', Dropped:'dropped'}
+                    };
+                    if (name === '@libs/filterInputs') return {
+                      FilterTypes: {
+                        Picker:'Picker', CheckboxGroup:'CheckboxGroup',
+                        ExcludableCheckboxGroup:'ExcludableCheckboxGroup',
+                        Switch:'Switch', TextInput:'TextInput', Input:'Input'
+                      }
+                    };
+                    throw new Error("Unsupported LNReader module import: " + name);
+                  };
+                }).call(this);
+            """.trimIndent()
+            cx.evaluateString(scope, compatibilityBootstrap, "qn-compatibility.js", 1, null)
+
 
             cx.evaluateString(scope, source, "extension-${extension.id}.js", 1, null)
             ScriptableObject.putProperty(scope, "__qnOperation", operation)
@@ -91,7 +179,11 @@ object ExtensionJsRuntime {
                   var args = JSON.parse(__qnArgumentsJson);
                   var result = plugin[__qnOperation].apply(plugin, args);
                   if (result && typeof result.then === 'function') {
-                    throw new Error('Async extension operations require the LNReader async host bridge.');
+                    var resolved = false, rejected = null;
+                    result.then(function(value) { result = value; resolved = true; },
+                                function(error) { rejected = error; });
+                    if (rejected) throw rejected;
+                    if (!resolved) throw new Error('Extension operation did not resolve synchronously.');
                   }
                   return JSON.stringify(result === undefined ? null : result);
                 })()
