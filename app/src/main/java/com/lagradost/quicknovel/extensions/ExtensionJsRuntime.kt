@@ -1,6 +1,6 @@
 package com.lagradost.quicknovel.extensions
 
-import android.content.Context
+import android.content.Context as AndroidContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
@@ -44,7 +44,7 @@ object ExtensionJsRuntime {
         operation: String,
         argumentsJson: String,
         testFetchOverride: ((String) -> ExtensionHttpClient.TextResponse)? = null,
-        storageContext: Context? = null,
+        storageContext: AndroidContext? = null,
     ): Result<ExecutionResult> = runCatching {
         require(operation in allowedOperations) { "Unsupported extension operation." }
         require(argumentsJson.toByteArray(Charsets.UTF_8).size <= MAX_ARGUMENT_BYTES) {
@@ -147,7 +147,7 @@ object ExtensionJsRuntime {
                     val raw = args.getOrNull(4)?.toString().equals("true", ignoreCase = true)
                     val prefs = storageContext?.getSharedPreferences(
                         "quicknovel_extension_storage_${extension.id}",
-                        Context.MODE_PRIVATE,
+                        AndroidContext.MODE_PRIVATE,
                     ) ?: throw IllegalStateException("Extension storage requires an app context.")
                     val prefix = "entry_"
                     val output = when (command) {
