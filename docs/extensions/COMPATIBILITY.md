@@ -33,7 +33,7 @@ Networking is bounded by request-count, response-size, timeout, redirect, and ho
 
 The following are not currently implemented as complete LNReader-compatible modules:
 
-- @libs/storage, localStorage/sessionStorage persistence, and plugin settings.
+- Plugin settings UI and WebView-backed localStorage/sessionStorage values. The @libs/storage key/value store is now persisted per extension.
 - dayjs, htmlparser2, protobuf fetches, AES helpers, and general @libs/utils helpers.
 - Full Cheerio behavior and all selector methods.
 - Non-GET HTTP methods, full Fetch API behavior, arbitrary request scheduling, and true asynchronous Promise/microtask handling.
