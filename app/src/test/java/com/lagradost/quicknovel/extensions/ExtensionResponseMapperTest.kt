@@ -23,6 +23,11 @@ class ExtensionResponseMapperTest {
                 "title": "Missing URL"
               },
               {
+                "title": "Unsafe poster",
+                "url": "/series/three",
+                "posterUrl": "javascript:alert(1)"
+              },
+              {
                 "title": "Novel Two",
                 "url": "https://reader.example/series/two"
               }
@@ -35,7 +40,7 @@ class ExtensionResponseMapperTest {
             baseUrl = "https://reader.example/catalog/",
         )
 
-        assertEquals(2, results.size)
+        assertEquals(3, results.size)
         assertEquals("Novel One", results[0].name)
         assertEquals("https://reader.example/series/one", results[0].url)
         assertEquals("https://reader.example/images/one.jpg", results[0].posterUrl)
@@ -43,6 +48,9 @@ class ExtensionResponseMapperTest {
         assertEquals("Test provider", results[0].apiName)
         assertEquals("https://reader.example/series/two", results[1].url)
         assertNull(results[1].posterUrl)
+        assertEquals("Unsafe poster", results[2].name)
+        assertEquals("https://reader.example/series/three", results[2].url)
+        assertNull(results[2].posterUrl)
     }
 
     @Test
@@ -109,3 +117,26 @@ class ExtensionResponseMapperTest {
         )
     }
 }
+
+    
+    @Test(expected = IllegalArgumentException::class)
+    fun novelDetailsRejectUnsafeNovelUrl() {
+        ExtensionResponseMapper.parseNovel(
+            json = """{"title":"Unsafe","url":"javascript:alert(1)","chapters":[]}""",
+            apiName = "Test provider",
+            baseUrl = "https://reader.example/",
+            requestedUrl = "https://reader.example/series/unsafe",
+        )
+    }
+
+    @Test
+    fun chapterUrlsWithUnsafeSchemesAreSkipped() {
+        val result = ExtensionResponseMapper.parseNovel(
+            json = """{"title":"Example","url":"/series/example","chapters":[{"title":"Unsafe","url":"file:///tmp/secret"},{"title":"Safe","url":"/chapter/1"}]}""",
+            apiName = "Test provider",
+            baseUrl = "https://reader.example/",
+            requestedUrl = "https://reader.example/series/example",
+        )
+        assertEquals(1, result.data.size)
+        assertEquals("Safe", result.data.single().name)
+    }
