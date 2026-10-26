@@ -117,9 +117,7 @@ class ExtensionResponseMapperTest {
             baseUrl = "https://reader.example/",
         )
     }
-}
 
-    
     @Test(expected = IllegalArgumentException::class)
     fun novelDetailsRejectUnsafeNovelUrl() {
         ExtensionResponseMapper.parseNovel(
@@ -141,3 +139,4 @@ class ExtensionResponseMapperTest {
         assertEquals(1, result.data.size)
         assertEquals("Safe", result.data.single().name)
     }
+}
