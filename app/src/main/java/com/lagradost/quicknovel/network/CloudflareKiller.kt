@@ -96,11 +96,6 @@ class CloudflareKiller : Interceptor {
 
         val isChallengeBody = bodySample.contains("cf-browser-verification") ||
                 bodySample.contains("checking your browser") ||
-                bodySample.contains("checking if the site connection is secure") ||
-                bodySample.contains("verify you are human") ||
-                bodySample.contains("performing security verification") ||
-                bodySample.contains("enable javascript and cookies to continue") ||
-                bodySample.contains("cf-turnstile") ||
                 bodySample.contains("just a moment") ||
                 bodySample.contains("/cdn-cgi/") ||
                 bodySample.contains("one moment...") ||
