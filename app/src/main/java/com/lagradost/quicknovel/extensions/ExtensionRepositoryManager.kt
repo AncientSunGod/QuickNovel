@@ -41,6 +41,7 @@ object ExtensionRepositoryManager {
     private const val REPOSITORIES_KEY = "repository_urls"
     private const val EXTENSIONS_DIR = "extensions"
     private const val MAX_BUNDLE_BYTES = 8 * 1024 * 1024
+    private const val MAX_MANIFEST_BYTES = 2 * 1024 * 1024
 
     fun getRepositories(context: Context): List<String> =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -82,6 +83,8 @@ object ExtensionRepositoryManager {
         return try {
             val parsed = URL(value)
             (parsed.protocol == "https" || parsed.protocol == "http") &&
+                !parsed.host.isNullOrBlank() &&
+                parsed.userInfo == null &&
                 parsed.path.lowercase(Locale.ROOT).endsWith("plugins.min.json")
         } catch (_: Exception) {
             false
@@ -102,14 +105,31 @@ object ExtensionRepositoryManager {
                 if (status !in 200..299) {
                     throw IllegalStateException("Repository returned HTTP $status: $repositoryUrl")
                 }
-                val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                require(connection.url.protocol == "https" || connection.url.protocol == "http") {
+                    "Repository redirected to an unsupported protocol."
+                }
+                val body = connection.inputStream.use { input ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    var total = 0
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        require(total <= MAX_MANIFEST_BYTES) {
+                            "Repository manifest exceeds the 2 MB limit."
+                        }
+                        output.write(buffer, 0, count)
+                    }
+                    output.toString(Charsets.UTF_8.name())
+                }
                 val array = JSONArray(body)
                 for (index in 0 until array.length()) {
                     val item = array.optJSONObject(index) ?: continue
                     val id = item.optString("id").trim()
                     val name = item.optString("name").trim()
                     val url = item.optString("url").trim()
-                    if (id.isBlank() || name.isBlank() || url.isBlank()) continue
+                    if (id.isBlank() || name.isBlank() || !isValidBundleUrl(url)) continue
                     listings += ExtensionListing(
                         id = id,
                         name = name,
@@ -128,15 +148,22 @@ object ExtensionRepositoryManager {
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
     }
 
+    private fun isValidBundleUrl(value: String): Boolean = runCatching {
+        val parsed = URL(value)
+        (parsed.protocol == "https" || parsed.protocol == "http") &&
+            !parsed.host.isNullOrBlank() &&
+            parsed.userInfo == null
+    }.getOrDefault(false)
+
     /**
      * Downloads an extension bundle into private app storage. The file is not executed
      * by this method; execution must go through the dedicated runtime/adapter.
      */
     fun install(context: Context, listing: ExtensionListing): Result<InstalledExtension> = runCatching {
-        val bundleUrl = URL(listing.url)
-        require(bundleUrl.protocol == "https" || bundleUrl.protocol == "http") {
-            "Extension bundle must use HTTP or HTTPS."
+        require(isValidBundleUrl(listing.url)) {
+            "Extension bundle must use a valid HTTP or HTTPS URL without embedded credentials."
         }
+        val bundleUrl = URL(listing.url)
         require(listing.id.isNotBlank()) { "Extension ID is missing." }
 
         val safeId = listing.id.replace(Regex("[^A-Za-z0-9._-]"), "_").take(120)
@@ -156,6 +183,9 @@ object ExtensionRepositoryManager {
             val status = connection.responseCode
             if (status !in 200..299) {
                 throw IllegalStateException("Extension download returned HTTP $status.")
+            }
+            require(connection.url.protocol == "https" || connection.url.protocol == "http") {
+                "Extension download redirected to an unsupported protocol."
             }
             val output = ByteArrayOutputStream()
             connection.inputStream.use { input ->
