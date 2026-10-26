@@ -7,10 +7,11 @@ import java.net.URL
 import java.util.Locale
 
 /**
- * Bounded HTTP GET helper for the future extension host bridge.
+ * Bounded HTTP GET helper used by the restricted extension host bridge.
  *
- * This deliberately has no Android Context or app-network objects. Do not expose it
- * directly to JavaScript until the runtime can enforce execution and call budgets.
+ * This deliberately has no Android Context or app-network objects. The JS bridge limits
+ * calls and restricts requests to the extension's declared site host; this remains a
+ * compatibility boundary, not process isolation for untrusted code.
  */
 object ExtensionHttpClient {
     data class TextResponse(
