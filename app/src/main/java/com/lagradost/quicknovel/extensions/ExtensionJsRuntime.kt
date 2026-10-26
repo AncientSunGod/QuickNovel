@@ -503,10 +503,14 @@ object ExtensionJsRuntime {
                     if (name === '@libs/isAbsoluteUrl') return {
                       isUrlAbsolute: function(url) { return String(url).toLowerCase().indexOf('http') === 0; }
                     };
-                    if (name === 'urlencode') return {
-                      encode: function(value) { return encodeURIComponent(String(value)); },
-                      decode: function(value) { return decodeURIComponent(String(value)); }
-                    };
+                    if (name === 'urlencode') {
+                      var urlencode = {
+                        encode: function(value) { return encodeURIComponent(String(value)); },
+                        decode: function(value) { return decodeURIComponent(String(value)); }
+                      };
+                      urlencode.default = urlencode;
+                      return urlencode;
+                    }
                     if (name === '@libs/defaultCover') return {defaultCover: ''};
                     if (name === '@libs/novelStatus') return {
                       NovelStatus: {Ongoing:'ongoing', Completed:'completed', Paused:'paused', Dropped:'dropped'}
