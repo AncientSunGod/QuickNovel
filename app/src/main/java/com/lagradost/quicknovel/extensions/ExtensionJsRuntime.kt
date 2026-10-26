@@ -14,11 +14,12 @@ import java.io.File
 import java.net.URI
 
 /**
- * Instruction-budgeted JavaScript execution for extension bundles.
+ * Partial CommonJS-style JavaScript runtime for LNReader extension bundles.
  *
- * This is the execution core only: LNReader's Metro module loader and its fetch/Cheerio
- * shims must be installed before arbitrary LNReader repository bundles can run. Unknown
- * imports fail closed rather than being silently replaced with fake implementations.
+ * This is an in-process compatibility layer, not a security sandbox. It exposes a narrow,
+ * bounded host bridge for networking and HTML selection; unknown imports fail closed rather
+ * than being silently replaced with fake implementations. Arbitrary third-party bundles
+ * should not be treated as safe until execution is moved to a genuinely isolated runtime.
  */
 object ExtensionJsRuntime {
     private const val MAX_SOURCE_BYTES = 8 * 1024 * 1024
