@@ -71,3 +71,13 @@ Next required work remains: implement and test the actual LNReader bundle/module
 ### HTML parser prototype
 
 `ExtensionHtmlParser` now provides bounded CSS-selector extraction, text extraction, and attribute lookup using the app's existing Jsoup dependency. Its input, selector, result-count, and text sizes are capped, with unit tests for representative HTML. This is a host-side building block, **not yet a Cheerio-compatible JavaScript module**: LNReader bundles cannot call it through `require('cheerio')` or `htmlparser2` yet.
+
+### First real-bundle compatibility slice
+
+The runtime now has a narrow module bridge for the imports used by the upstream **Chikari** English plugin: `@libs/fetch`, `@libs/defaultCover`, `@libs/novelStatus`, and `@libs/filterInputs`. Its fetch bridge allows GET requests only, caps each operation at 20 requests, restricts requests and redirects to the extension's declared site host, rejects localhost/private network resolutions, and uses the existing response/time limits. A synchronous Promise compatibility shim supports the transpiled async pattern used by that bundle.
+
+A native `ExtensionMainAPI` now adapts `searchNovels`, `parseNovel`, `parseChapter`, and optional `resolveUrl` into QuickNovel's provider interface. Installed extensions are included in provider discovery, and newly installed providers are enabled by default. Opaque LNReader paths are preserved in URL fragments so QuickNovel can route chapter loads back to the plugin without sending those fragments to the website.
+
+An upstream Chikari bundle is included as an MIT-licensed test fixture, and a test exercises its actual `searchNovels` function with a deterministic mocked API response. This validates one real bundle's module-loading and async pattern; it does **not** establish broad compatibility with all repository plugins. Plugins importing other helpers, Cheerio/htmlparser2, settings/storage APIs, or requiring true asynchronous scheduling remain unsupported. Rhino still runs in-process, so the instruction budget is not equivalent to process isolation or a hard memory limit.
+
+Build/CI verification for these newest commits is still pending; the repository status endpoint returned no checks in this session. Do not treat the feature as release-ready until the Android build and unit tests pass, and a real plugin's search → details → chapter flow is exercised through the UI.
