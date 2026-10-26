@@ -535,6 +535,10 @@ object ExtensionJsRuntime {
                     throw new Error('Bundle does not export operation: ' + __qnOperation);
                   }
                   var args = JSON.parse(__qnArgumentsJson);
+                  if (__qnOperation === 'popularNovels' && args[1] && args[1].filters &&
+                      Object.keys(args[1].filters).length === 0) {
+                    args[1].filters = plugin.filters || {};
+                  }
                   var result = plugin[__qnOperation].apply(plugin, args);
                   if (result && typeof result.then === 'function') {
                     var resolved = false, rejected = null;
