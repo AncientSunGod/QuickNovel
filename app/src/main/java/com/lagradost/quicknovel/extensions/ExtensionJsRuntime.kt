@@ -6,6 +6,9 @@ import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import org.jsoup.nodes.Node
+import org.jsoup.nodes.TextNode
+import org.jsoup.nodes.DataNode
 import org.mozilla.javascript.BaseFunction
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.ContextFactory
@@ -133,6 +136,19 @@ object ExtensionJsRuntime {
             htmlFunction.parentScope = scope
             htmlFunction.prototype = ScriptableObject.getFunctionPrototype(scope)
             ScriptableObject.putProperty(scope, "__qnHtml", htmlFunction)
+            val htmlEventsFunction = object : BaseFunction() {
+                override fun call(
+                    context: Context,
+                    callScope: Scriptable,
+                    thisObj: Scriptable,
+                    args: Array<out Any>,
+                ): Any {
+                    return htmlBridge.parseEvents(args.firstOrNull()?.toString().orEmpty())
+                }
+            }
+            htmlEventsFunction.parentScope = scope
+            htmlEventsFunction.prototype = ScriptableObject.getFunctionPrototype(scope)
+            ScriptableObject.putProperty(scope, "__qnHtmlEvents", htmlEventsFunction)
             val storageFunction = object : BaseFunction() {
                 override fun call(
                     context: Context,
@@ -336,6 +352,30 @@ object ExtensionJsRuntime {
                       }
                       return {load:load,default:{load:load}};
                     }
+                    if (name === 'htmlparser2') {
+                      function Parser(handlers, options) {
+                        this.handlers = handlers || {};
+                        this.source = '';
+                      }
+                      Parser.prototype.write = function(chunk) {
+                        this.source += String(chunk == null ? '' : chunk);
+                        return this;
+                      };
+                      Parser.prototype.end = function(chunk) {
+                        if (chunk != null) this.source += String(chunk);
+                        var events = JSON.parse(__qnHtmlEvents(this.source));
+                        for (var i=0;i<events.length;i++) {
+                          var event = events[i], handler = this.handlers[event.type];
+                          if (typeof handler !== 'function') continue;
+                          if (event.type === 'open') handler.call(this.handlers,event.name,event.attribs);
+                          else if (event.type === 'text') handler.call(this.handlers,event.text);
+                          else if (event.type === 'close') handler.call(this.handlers,event.name);
+                        }
+                        this.source = '';
+                        return this;
+                      };
+                      return {Parser:Parser,default:{Parser:Parser}};
+                    }
                     if (name === '@libs/storage') {
                       function call(command, key, value, expires, raw) {
                         return JSON.parse(__qnStorage(command, String(key == null ? '' : key),
@@ -528,6 +568,39 @@ object ExtensionJsRuntime {
         private var nextId = 1
         private val documents = mutableMapOf<Int, Document>()
         private val selections = mutableMapOf<Int, List<Element>>()
+
+        fun parseEvents(html: String): String {
+            require(html.length <= maxHtmlChars) { "HTML input exceeds the 2 MB limit." }
+            val document = Jsoup.parse(html, baseUrl)
+            val events = JSONArray()
+            var visited = 0
+            fun walk(node: Node) {
+                visited++
+                require(visited <= 10_000) { "HTML parser exceeded the node limit." }
+                when (node) {
+                    is Document -> node.childNodes().forEach(::walk)
+                    is Element -> {
+                        val attributes = JSONObject()
+                        node.attributes().asList().take(100).forEach { attribute ->
+                            attributes.put(attribute.key.take(100), attribute.value.take(10_000))
+                        }
+                        events.put(JSONObject().put("type", "open").put("name", node.tagName()).put("attribs", attributes))
+                        node.childNodes().forEach(::walk)
+                        events.put(JSONObject().put("type", "close").put("name", node.tagName()))
+                    }
+                    is TextNode -> events.put(JSONObject().put("type", "text").put("text", node.getWholeText().take(100_000)))
+                    is DataNode -> events.put(JSONObject().put("type", "text").put("text", node.getWholeData().take(100_000)))
+                    else -> node.childNodes().forEach(::walk)
+                }
+                require(events.length() <= 20_000) { "HTML parser exceeded the event limit." }
+            }
+            walk(document)
+            val result = events.toString()
+            require(result.toByteArray(Charsets.UTF_8).size <= 2 * 1024 * 1024) {
+                "HTML parser output exceeds the 2 MB limit."
+            }
+            return result
+        }
 
         fun invoke(command: String, selectionId: Int, value: String?, index: Int?): String {
             val result: Any? = when (command) {
