@@ -95,6 +95,16 @@ class NovelArrowProvider : MainAPI() {
         val results = mutableListOf<SearchResponse>()
         for (index in 0 until items.length()) {
             val item = items.optJSONObject(index) ?: continue
+            // Do not surface novels explicitly classified with age-restricted genres.
+            val genres = item.optJSONArray("novel_genres")
+            val restrictedGenres = setOf("adult", "ecchi", "smut", "mature")
+            val hasRestrictedGenre = genres?.let { values ->
+                (0 until values.length()).any { genreIndex ->
+                    values.optString(genreIndex).trim().lowercase() in restrictedGenres
+                }
+            } ?: false
+            if (hasRestrictedGenre) continue
+
             val id = item.stringOrNull("novel_id") ?: continue
             val title = item.stringOrNull("novel_name") ?: continue
             results += newSearchResponse(title, "$mainUrl/novel/$id") {
