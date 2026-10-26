@@ -11,9 +11,10 @@ QuickNovel can add LNReader repository manifests, browse entries, install/update
 The native adapter maps the supported LNReader operations to QuickNovel's provider contract:
 
 1. Search calls searchNovels and maps novel title, path, and cover.
-2. Novel details call parseNovel and map metadata plus chapters.
-3. Chapter reading calls parseChapter and returns its HTML/text.
-4. Opaque plugin paths are preserved in URL fragments so saved entries can route back to the extension without sending those fragments to the website.
+2. The provider's main page calls popularNovels for browseable listings.
+3. Novel details call parseNovel and map metadata plus chapters.
+4. Chapter reading calls parseChapter and returns its HTML/text.
+5. Opaque plugin paths are preserved in URL fragments so saved entries can route back to the extension without sending those fragments to the website.
 
 An upstream Chikari bundle is included as an MIT-licensed fixture. Tests exercise its search, novel-details, and chapter parsing operations with mocked site responses. Additional tests cover provider routing, Promise.all, fetchText, and common Cheerio selectors. **These tests have not yet been confirmed by a successful Android build/test run.**
 
