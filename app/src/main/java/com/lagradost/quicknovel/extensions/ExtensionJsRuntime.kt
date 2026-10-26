@@ -135,6 +135,21 @@ object ExtensionJsRuntime {
                   QNPromise.reject = function(error) {
                     return new QNPromise(function(resolve, reject) { reject(error); });
                   };
+                  QNPromise.all = function(values) {
+                    return new QNPromise(function(resolve, reject) {
+                      if (!values || typeof values.length !== 'number')
+                        return reject(new TypeError('Promise.all expects an array-like value'));
+                      var length = values.length, remaining = length, results = [];
+                      if (length === 0) return resolve(results);
+                      for (var i = 0; i < length; i++) (function(index) {
+                        QNPromise.resolve(values[index]).then(function(value) {
+                          results[index] = value;
+                          remaining--;
+                          if (remaining === 0) resolve(results);
+                        }, reject);
+                      })(i);
+                    });
+                  };
                   this.Promise = QNPromise;
                   this.require = function(name) {
                     if (name === '@libs/fetch') return {
