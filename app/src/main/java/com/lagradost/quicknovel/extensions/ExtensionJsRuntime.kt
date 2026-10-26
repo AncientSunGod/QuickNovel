@@ -1,5 +1,6 @@
 package com.lagradost.quicknovel.extensions
 
+import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
@@ -43,6 +44,7 @@ object ExtensionJsRuntime {
         operation: String,
         argumentsJson: String,
         testFetchOverride: ((String) -> ExtensionHttpClient.TextResponse)? = null,
+        storageContext: Context? = null,
     ): Result<ExecutionResult> = runCatching {
         require(operation in allowedOperations) { "Unsupported extension operation." }
         require(argumentsJson.toByteArray(Charsets.UTF_8).size <= MAX_ARGUMENT_BYTES) {
@@ -131,6 +133,70 @@ object ExtensionJsRuntime {
             htmlFunction.parentScope = scope
             htmlFunction.prototype = ScriptableObject.getFunctionPrototype(scope)
             ScriptableObject.putProperty(scope, "__qnHtml", htmlFunction)
+            val storageFunction = object : BaseFunction() {
+                override fun call(
+                    context: Context,
+                    callScope: Scriptable,
+                    thisObj: Scriptable,
+                    args: Array<out Any>,
+                ): Any {
+                    val command = args.getOrNull(0)?.toString().orEmpty()
+                    val key = args.getOrNull(1)?.toString().orEmpty()
+                    val rawValue = args.getOrNull(2)?.toString().orEmpty()
+                    val expires = args.getOrNull(3)?.toString()?.toLongOrNull()
+                    val raw = args.getOrNull(4)?.toString().equals("true", ignoreCase = true)
+                    val prefs = storageContext?.getSharedPreferences(
+                        "quicknovel_extension_storage_${extension.id}",
+                        Context.MODE_PRIVATE,
+                    ) ?: throw IllegalStateException("Extension storage requires an app context.")
+                    val prefix = "entry_"
+                    val output = when (command) {
+                        "set" -> {
+                            require(key.length <= 500) { "Extension storage key is too long." }
+                            require(rawValue.length <= 100_000) { "Extension storage value is too large." }
+                            val storedValue = runCatching { org.json.JSONTokener(rawValue).nextValue() }.getOrNull()
+                            val envelope = JSONObject()
+                                .put("created", System.currentTimeMillis())
+                                .put("value", storedValue)
+                                .put("expires", expires)
+                            prefs.edit().putString(prefix + key, envelope.toString()).apply()
+                            "null"
+                        }
+                        "get" -> {
+                            require(key.length <= 500) { "Extension storage key is too long." }
+                            val stored = prefs.getString(prefix + key, null)
+                            if (stored == null) "null" else {
+                                val envelope = JSONObject(stored)
+                                val expiry = envelope.optLong("expires", 0L)
+                                if (expiry > 0L && System.currentTimeMillis() >= expiry) {
+                                    prefs.edit().remove(prefix + key).apply()
+                                    "null"
+                                } else if (raw) envelope.toString()
+                                else {
+                                    val stored = envelope.opt("value")
+                                    if (stored == null) "null"
+                                    else if (stored is JSONObject || stored is JSONArray) stored.toString()
+                                    else JSONObject.wrap(stored).toString()
+                                }
+                            }
+                        }
+                        "delete" -> {
+                            prefs.edit().remove(prefix + key).apply()
+                            "null"
+                        }
+                        "clearAll" -> {
+                            prefs.all.keys.filter { it.startsWith(prefix) }.forEach { prefs.edit().remove(it).apply() }
+                            "null"
+                        }
+                        "getAllKeys" -> JSONArray(prefs.all.keys.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }).toString()
+                        else -> throw IllegalArgumentException("Unsupported extension storage operation.")
+                    }
+                    return output
+                }
+            }
+            storageFunction.parentScope = scope
+            storageFunction.prototype = ScriptableObject.getFunctionPrototype(scope)
+            ScriptableObject.putProperty(scope, "__qnStorage", storageFunction)
             val compatibilityBootstrap = """
                 (function() {
                   function QNPromise(executor) {
@@ -268,6 +334,27 @@ object ExtensionJsRuntime {
                         return $;
                       }
                       return {load:load,default:{load:load}};
+                    }
+                    if (name === '@libs/storage') {
+                      function call(command, key, value, expires, raw) {
+                        return JSON.parse(__qnStorage(command, String(key == null ? '' : key),
+                          value == null ? '' : String(value), expires == null ? '' : String(expires), raw ? 'true' : 'false'));
+                      }
+                      var storage = {
+                        set: function(key, value, expires) {
+                          var expiry = expires instanceof Date ? expires.getTime() : expires;
+                          return call('set', key, JSON.stringify(value), expiry, false);
+                        },
+                        get: function(key, raw) {
+                          var value = call('get', key, '', '', raw);
+                          return value === null ? undefined : value;
+                        },
+                        delete: function(key) { return call('delete', key); },
+                        clearAll: function() { return call('clearAll'); },
+                        getAllKeys: function() { return call('getAllKeys'); }
+                      };
+                      var readOnlyStorage = {get:function(){return undefined;}};
+                      return {storage:storage,localStorage:readOnlyStorage,sessionStorage:readOnlyStorage};
                     }
                     if (name === '@libs/isAbsoluteUrl') return {
                       isUrlAbsolute: function(url) { return String(url).toLowerCase().indexOf('http') === 0; }
