@@ -95,7 +95,7 @@ object ExtensionHttpClient {
                         url = currentUrl,
                         statusCode = status,
                         contentType = connection.contentType,
-                        body = bodyBytes.toString(Charsets.UTF_8),
+                        body = String(bodyBytes, Charsets.UTF_8),
                     )
                 )
             } finally {
