@@ -2,6 +2,7 @@ package com.lagradost.quicknovel.extensions
 
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.URL
 import java.util.Locale
 
@@ -122,6 +123,28 @@ object ExtensionHttpClient {
             host.equals(it.lowercase(Locale.ROOT).trimEnd('.'), ignoreCase = true)
         }) {
             "Extension request host is outside the approved site."
+        }
+        if (allowedHosts != null) {
+            val addresses = InetAddress.getAllByName(host)
+            require(addresses.isNotEmpty() && addresses.all { address ->
+                val bytes = address.address
+                val privateV4 = bytes.size == 4 && (
+                    (bytes[0].toInt() and 0xff) == 10 ||
+                    (bytes[0].toInt() and 0xff) == 127 ||
+                    ((bytes[0].toInt() and 0xff) == 169 && (bytes[1].toInt() and 0xff) == 254) ||
+                    ((bytes[0].toInt() and 0xff) == 172 && (bytes[1].toInt() and 0xff) in 16..31) ||
+                    ((bytes[0].toInt() and 0xff) == 192 && (bytes[1].toInt() and 0xff) == 168) ||
+                    ((bytes[0].toInt() and 0xff) == 100 && (bytes[1].toInt() and 0xff) in 64..127) ||
+                    (bytes[0].toInt() and 0xff) >= 224
+                )
+                val firstV6 = if (bytes.size == 16) bytes[0].toInt() and 0xff else 0
+                val uniqueLocalV6 = bytes.size == 16 && (firstV6 and 0xfe) == 0xfc
+                !privateV4 && !uniqueLocalV6 && !address.isAnyLocalAddress &&
+                    !address.isLoopbackAddress && !address.isLinkLocalAddress &&
+                    !address.isSiteLocalAddress && !address.isMulticastAddress
+            }) {
+                "Extension site resolves to a non-public network address."
+            }
         }
         return parsed.toURI().normalize().toString()
     }
