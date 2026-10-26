@@ -167,6 +167,21 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun exposesStorageHelperMethodsToBundles() {
+        val (extension, file) = extension(
+            "var store = require('@libs/storage').storage; " +
+                "module.exports = { searchNovels: function() { " +
+                "return [{name:typeof store.get,path:typeof store.set}]; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("""[{"name":"function","path":"function"}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun fetchBridgeRejectsRequestsOutsideTheExtensionSite() {
         val (extension, file) = extension(
             "var fetch = require('@libs/fetch'); " +
