@@ -202,10 +202,15 @@ object ExtensionRepositoryManager {
                 require(redirectIndex < 5) {
                     "Remote server exceeded the 5-redirect limit."
                 }
-                current = URL(current, location)
-                require(isValidBundleUrl(current.toString())) {
+                val next = URL(current, location)
+                require(!(current.protocol.equals("https", ignoreCase = true) &&
+                    !next.protocol.equals("https", ignoreCase = true))) {
+                    "HTTPS downloads may not redirect to HTTP."
+                }
+                require(isValidBundleUrl(next.toString())) {
                     "Remote redirect target is not an allowed HTTP(S) URL."
                 }
+                current = next
             } else {
                 return connection
             }
