@@ -12,7 +12,7 @@ QuickNovel's native provider contract is the Kotlin `MainAPI` interface:
 - `loadHtml(url)` returns chapter content
 - optional main-page methods return `HeadMainPageResponse`
 
-LNReader plugins commonly use a different JavaScript API and bundled module imports. The QuickJS engine does not automatically supply React Native, Metro module resolution, LNReader helper libraries, Cheerio, or QuickNovel's HTTP client. Therefore a bundle passing a JavaScript smoke test does not establish compatibility.
+LNReader plugins commonly use a different JavaScript API and bundled module imports. A JavaScript engine by itself does not supply React Native, Metro module resolution, LNReader helper libraries, Cheerio, or QuickNovel's HTTP client. QuickNovel currently does not execute downloaded extension JavaScript. Therefore a bundle passing a JavaScript smoke test does not establish compatibility.
 
 ## Proposed adapter boundary
 
