@@ -52,4 +52,22 @@ class ExtensionRepositoryManagerTest {
             )
         )
     }
+
+    @Test
+    fun acceptsSafeExtensionIdsWithoutRewritingThem() {
+        assertTrue(ExtensionRepositoryManager.isValidExtensionId("com.example.reader"))
+        assertTrue(ExtensionRepositoryManager.isValidExtensionId("reader_2-beta"))
+        assertTrue(ExtensionRepositoryManager.isValidExtensionId("A"))
+        assertTrue(ExtensionRepositoryManager.isValidExtensionId("a".repeat(120)))
+    }
+
+    @Test
+    fun rejectsUnsafeOrOverlongExtensionIds() {
+        assertFalse(ExtensionRepositoryManager.isValidExtensionId("../reader"))
+        assertFalse(ExtensionRepositoryManager.isValidExtensionId("reader/other"))
+        assertFalse(ExtensionRepositoryManager.isValidExtensionId("reader\\other"))
+        assertFalse(ExtensionRepositoryManager.isValidExtensionId("reader:other"))
+        assertFalse(ExtensionRepositoryManager.isValidExtensionId(""))
+        assertFalse(ExtensionRepositoryManager.isValidExtensionId("a".repeat(121)))
+    }
 }
