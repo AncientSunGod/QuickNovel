@@ -29,6 +29,7 @@ object ExtensionJsRuntime {
         "parseChapter",
         "popularNovels",
         "parsePage",
+        "resolveUrl",
     )
 
     data class ExecutionResult(val json: String)
