@@ -243,7 +243,7 @@ object SettingScreen : SearchableSettings {
                                     }
                                     result.onSuccess { entries ->
                                         extensionListings = entries
-                                        repositoryStatus = "Loaded ${entries.size} extension listings. These are catalogue entries only; running extensions still requires the JavaScript runtime and QuickNovel adapter."
+                                        repositoryStatus = "Loaded ${entries.size} extension listings. Compatibility is partial: some plugins may fail if they require unsupported LNReader modules."
                                     }.onFailure { error ->
                                         repositoryStatus = error.message ?: "Could not refresh repositories."
                                     }
@@ -327,7 +327,7 @@ object SettingScreen : SearchableSettings {
                                             }
                                             item {
                                                 Text("Installed bundles (${installedExtensions.size})", style = MaterialTheme.typography.titleSmall)
-                                                Text("Installed bundles are downloaded but not executable until the JavaScript runtime and source adapter are connected.", style = MaterialTheme.typography.bodySmall)
+                                                Text("Installed extensions are registered as providers, but compatibility is partial. Unsupported imports may cause search or reading to fail.", style = MaterialTheme.typography.bodySmall)
                                             }
                                             items(extensionListings.take(30)) { entry ->
                                                 val installed = installedExtensions.firstOrNull { it.id == entry.id }
@@ -344,7 +344,7 @@ object SettingScreen : SearchableSettings {
                                                                     }
                                                                     result.onSuccess {
                                                                         installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
-                                                                        repositoryStatus = "${entry.name} downloaded. It is not runnable yet; runtime integration is still being built."
+                                                                        repositoryStatus = "${entry.name} installed. It is now available as a provider; compatibility depends on the plugin's module imports."
                                                                     }.onFailure { error ->
                                                                         repositoryStatus = error.message ?: "Could not install ${entry.name}."
                                                                     }
