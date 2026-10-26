@@ -23,6 +23,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -146,6 +151,29 @@ object SettingScreen : SearchableSettings {
         val store = AndroidPreferenceStore(context)
         val scope = rememberCoroutineScope()
         val settings = rememberAppSettings()
+        var repositoryDialogOpen by remember { mutableStateOf(false) }
+        var repositoryUrlInput by remember { mutableStateOf("") }
+        var extensionRepositories by remember { mutableStateOf(com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getRepositories(context)) }
+        var extensionListings by remember { mutableStateOf(emptyList<com.lagradost.quicknovel.extensions.ExtensionListing>()) }
+        var repositoryStatus by remember { mutableStateOf("Add an LNReader-compatible repository manifest URL.") }
+        var repositoryRefreshing by remember { mutableStateOf(false) }
+
+        fun refreshExtensionCatalog() {
+            repositoryRefreshing = true
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.refresh(context)
+                }
+                result.onSuccess { entries ->
+                    extensionListings = entries
+                    repositoryStatus = "Loaded ${entries.size} extension listings. Downloading or listing a plugin does not make it runnable yet; the JavaScript runtime and QuickNovel adapter are the next milestone."
+                }.onFailure { error ->
+                    repositoryStatus = error.message ?: "Could not refresh repositories."
+                }
+                repositoryRefreshing = false
+                extensionRepositories = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getRepositories(context)
+            }
+        }
 
         val logcat =
             getFilePreference(FileHelper.logcat, store, stringResource(R.string.log_cat_location))
@@ -215,6 +243,20 @@ object SettingScreen : SearchableSettings {
                         subtitleProvider = { v, _ ->
                             stringResource(R.string.active_providers, v.size)
                         }),
+                )
+            ),
+            Preference.PreferenceGroup(
+                title = "Extensions",
+                preferenceItems = persistentListOf(
+                    Preference.PreferenceItem.TextPreference(
+                        icon = painterResource(R.drawable.extension_24px),
+                        title = "Extension repositories",
+                        subtitle = "Add repositories and browse their extension manifests",
+                        onClick = {
+                            extensionRepositories = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getRepositories(context)
+                            repositoryDialogOpen = true
+                        }
+                    )
                 )
             ),
             Preference.PreferenceGroup(
@@ -626,5 +668,80 @@ fun RoundColor(color: Color) {
 private fun SettingScreenPreview() {
     CloudStreamPreviewTheme {
         SettingScreen.Content()
+
+        if (repositoryDialogOpen) {
+            AlertDialog(
+                onDismissRequest = { repositoryDialogOpen = false },
+                title = { Text("Extension repositories") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Add an LNReader-compatible manifest URL ending in plugins.min.json.")
+                        OutlinedTextField(
+                            value = repositoryUrlInput,
+                            onValueChange = { repositoryUrlInput = it },
+                            label = { Text("Repository manifest URL") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                val result = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager
+                                    .addRepository(context, repositoryUrlInput)
+                                result.onSuccess { updated ->
+                                    extensionRepositories = updated
+                                    repositoryUrlInput = ""
+                                    repositoryStatus = "Repository added. Tap Refresh to load its catalogue."
+                                }.onFailure { error ->
+                                    repositoryStatus = error.message ?: "Could not add repository."
+                                }
+                            },
+                            enabled = repositoryUrlInput.isNotBlank()
+                        ) { Text("Add repository") }
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Button(onClick = { refreshExtensionCatalog() }, enabled = !repositoryRefreshing && extensionRepositories.isNotEmpty()) {
+                                Text(if (repositoryRefreshing) "Refreshing…" else "Refresh catalogue")
+                            }
+                            if (repositoryRefreshing) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    modifier = Modifier.padding(start = 12.dp).size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        }
+                        Text(repositoryStatus, style = MaterialTheme.typography.bodySmall)
+                        Text("Repositories (${extensionRepositories.size})", style = MaterialTheme.typography.titleSmall)
+                        extensionRepositories.forEach { repository ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                            ) {
+                                Text(repository, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                TextButton(onClick = {
+                                    extensionRepositories = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.removeRepository(context, repository)
+                                    extensionListings = extensionListings.filterNot { it.repositoryUrl == repository }
+                                    repositoryStatus = "Repository removed."
+                                }) { Text("Remove") }
+                            }
+                        }
+                        Text("Available extensions (${extensionListings.size})", style = MaterialTheme.typography.titleSmall)
+                        extensionListings.take(30).forEach { entry ->
+                            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                Text(entry.name, style = MaterialTheme.typography.bodyMedium)
+                                Text("${entry.site} · ${entry.language} · ${entry.version}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        if (extensionListings.size > 30) {
+                            Text("Showing first 30 entries.", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { repositoryDialogOpen = false }) { Text("Done") }
+                }
+            )
+        }
+
+
     }
 }
