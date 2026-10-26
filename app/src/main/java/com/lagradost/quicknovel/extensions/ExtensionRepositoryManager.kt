@@ -219,25 +219,49 @@ object ExtensionRepositoryManager {
             .put("repositoryUrl", listing.repositoryUrl)
 
         val tempBundle = File(extensionDir, "plugin.js.tmp")
-        tempBundle.writeBytes(bundleBytes)
-        if (bundleFile.exists() && !bundleFile.delete()) {
-            tempBundle.delete()
-            throw IllegalStateException("Could not replace the previous extension bundle.")
-        }
-        if (!tempBundle.renameTo(bundleFile)) {
-            tempBundle.delete()
-            throw IllegalStateException("Could not save the extension bundle.")
-        }
         val tempMetadata = File(extensionDir, "manifest.json.tmp")
+        val backupBundle = File(extensionDir, "plugin.js.bak")
+        val backupMetadata = File(extensionDir, "manifest.json.bak")
+
+        // Stage both new files before touching the currently installed version.
+        tempBundle.writeBytes(bundleBytes)
         tempMetadata.writeText(manifest.toString())
-        if (metadataFile.exists() && !metadataFile.delete()) {
+        backupBundle.delete()
+        backupMetadata.delete()
+
+        var bundleBackedUp = false
+        var metadataBackedUp = false
+        try {
+            if (bundleFile.exists()) {
+                if (!bundleFile.renameTo(backupBundle)) {
+                    throw IllegalStateException("Could not preserve the previous extension bundle.")
+                }
+                bundleBackedUp = true
+            }
+            if (metadataFile.exists()) {
+                if (!metadataFile.renameTo(backupMetadata)) {
+                    throw IllegalStateException("Could not preserve the previous extension metadata.")
+                }
+                metadataBackedUp = true
+            }
+            if (!tempBundle.renameTo(bundleFile)) {
+                throw IllegalStateException("Could not save the new extension bundle.")
+            }
+            if (!tempMetadata.renameTo(metadataFile)) {
+                throw IllegalStateException("Could not save the new extension metadata.")
+            }
+        } catch (error: Exception) {
+            bundleFile.delete()
+            metadataFile.delete()
+            if (bundleBackedUp) backupBundle.renameTo(bundleFile)
+            if (metadataBackedUp) backupMetadata.renameTo(metadataFile)
+            throw error
+        } finally {
+            tempBundle.delete()
             tempMetadata.delete()
-            throw IllegalStateException("Could not update extension metadata.")
         }
-        if (!tempMetadata.renameTo(metadataFile)) {
-            tempMetadata.delete()
-            throw IllegalStateException("Could not save extension metadata.")
-        }
+        backupBundle.delete()
+        backupMetadata.delete()
 
         InstalledExtension(
             id = listing.id,
