@@ -424,6 +424,8 @@ object ExtensionJsRuntime {
         private val maxHtmlChars = 2 * 1024 * 1024
         private val maxSelectorChars = 500
         private val maxResults = 1_000
+        private val maxDocuments = 20
+        private val maxSelections = 2_000
         private var nextId = 1
         private val documents = mutableMapOf<Int, Document>()
         private val selections = mutableMapOf<Int, List<Element>>()
@@ -433,6 +435,7 @@ object ExtensionJsRuntime {
                 "load" -> {
                     val html = value.orEmpty()
                     require(html.length <= maxHtmlChars) { "HTML input exceeds the 2 MB limit." }
+                    require(documents.size < maxDocuments) { "Extension exceeded the HTML document limit." }
                     val id = nextId++
                     documents[id] = Jsoup.parse(html, baseUrl)
                     id
@@ -498,6 +501,7 @@ object ExtensionJsRuntime {
         }
 
         private fun store(elements: List<Element>): Int {
+            require(selections.size < maxSelections) { "Extension exceeded the HTML selection limit." }
             val id = nextId++
             selections[id] = elements.take(maxResults)
             return id
