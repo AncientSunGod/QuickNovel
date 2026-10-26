@@ -27,6 +27,7 @@ data class ExtensionListing(
     val customJsUrl: String? = null,
     val customCssUrl: String? = null,
     val hasSettings: Boolean = false,
+    val hasUpdate: Boolean = false,
 )
 
 data class InstalledExtension(
@@ -42,6 +43,7 @@ data class InstalledExtension(
     val customJsUrl: String? = null,
     val customCssUrl: String? = null,
     val hasSettings: Boolean = false,
+    val hasUpdate: Boolean = false,
 )
 
 object ExtensionRepositoryManager {
@@ -155,6 +157,7 @@ object ExtensionRepositoryManager {
                         customJsUrl = item.optString("customJS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
                         customCssUrl = item.optString("customCSS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
                         hasSettings = item.optBoolean("hasSettings", false),
+                        hasUpdate = item.optBoolean("hasUpdate", false),
                     )
                 }
             } finally {
@@ -250,6 +253,7 @@ object ExtensionRepositoryManager {
             .put("customJS", listing.customJsUrl)
             .put("customCSS", listing.customCssUrl)
             .put("hasSettings", listing.hasSettings)
+            .put("hasUpdate", listing.hasUpdate)
 
         val tempBundle = File(extensionDir, "plugin.js.tmp")
         val tempMetadata = File(extensionDir, "manifest.json.tmp")
@@ -313,6 +317,7 @@ object ExtensionRepositoryManager {
             customJsUrl = listing.customJsUrl,
             customCssUrl = listing.customCssUrl,
             hasSettings = listing.hasSettings,
+            hasUpdate = listing.hasUpdate,
         )
     }
 
@@ -338,6 +343,7 @@ object ExtensionRepositoryManager {
                     customJsUrl = json.optString("customJS").takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
                     customCssUrl = json.optString("customCSS").takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
                     hasSettings = json.optBoolean("hasSettings", false),
+                    hasUpdate = json.optBoolean("hasUpdate", false),
                 )
             }.getOrNull()
         }.filterNotNull().sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
