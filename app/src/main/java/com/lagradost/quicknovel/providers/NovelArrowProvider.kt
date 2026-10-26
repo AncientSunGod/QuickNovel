@@ -182,7 +182,7 @@ class NovelArrowProvider : MainAPI() {
     }
 
     override suspend fun loadHtml(url: String): String? {
-        val chapterPath = url.substringBefore("?").removePrefix("$apiBase/")
+        val chapterPath = url.substringBefore("?").substringAfter("$apiBase/", "")
         val parts = chapterPath.split("/")
         if (parts.size < 4 || parts[0] != "novels" || parts[2] != "chapters") {
             throw ErrorLoadingException("Unrecognised NovelArrow chapter URL")
