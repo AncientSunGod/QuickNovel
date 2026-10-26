@@ -10,10 +10,10 @@ import java.net.URL
 import java.util.Locale
 
 /**
- * Repository metadata support for LNReader-compatible extension manifests.
+ * Repository metadata and package management for LNReader-compatible extension manifests.
  *
- * This intentionally handles repository/catalogue data only. Executing an extension
- * requires a compatible JavaScript runtime and a QuickNovel API adapter.
+ * Execution is handled separately by ExtensionJsRuntime and ExtensionMainAPI; only a
+ * subset of LNReader module imports is currently supported.
  */
 data class ExtensionListing(
     val id: String,
