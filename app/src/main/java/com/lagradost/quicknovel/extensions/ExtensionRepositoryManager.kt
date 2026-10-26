@@ -265,7 +265,6 @@ object ExtensionRepositoryManager {
         require(isValidBundleUrl(listing.url)) {
             "Extension bundle must use a valid HTTP or HTTPS URL without embedded credentials."
         }
-        val bundleUrl = URL(listing.url)
         require(isValidExtensionId(listing.id)) {
             "Extension ID must contain only letters, numbers, dots, underscores, or hyphens (maximum 120 characters)."
         }
