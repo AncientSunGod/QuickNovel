@@ -164,7 +164,7 @@ class Apis {
                 val context = activity?.applicationContext ?: return builtInApis
                 val installed = runCatching {
                     ExtensionRepositoryManager.getInstalledExtensions(context)
-                        .map { ExtensionMainAPI(it) }
+                        .map { ExtensionMainAPI(it, context) }
                 }.getOrDefault(emptyList())
                 val builtInNames = builtInApis.map { it.name }.toSet()
                 return (builtInApis + installed.filterNot { it.name in builtInNames })
