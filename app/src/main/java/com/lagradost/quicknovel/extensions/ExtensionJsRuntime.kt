@@ -178,6 +178,13 @@ object ExtensionJsRuntime {
                             require(prefix + key in prefs.all.keys || prefs.all.keys.count { it.startsWith(prefix) } < 500) {
                                 "Extension storage exceeded the 500-key limit."
                             }
+                            val currentSize = prefs.all.entries
+                                .filter { it.key.startsWith(prefix) }
+                                .sumOf { it.value.toString().length }
+                            val previousSize = prefs.getString(prefix + key, null)?.length ?: 0
+                            require(currentSize - previousSize + envelope.toString().length <= 2_097_152) {
+                                "Extension storage exceeded the 2 MB limit."
+                            }
                             prefs.edit().putString(prefix + key, envelope.toString()).apply()
                             "null"
                         }
