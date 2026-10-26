@@ -232,6 +232,7 @@ object SettingScreen : SearchableSettings {
                             var repositoryUrlInput by remember { mutableStateOf("") }
                             var extensionRepositories by remember { mutableStateOf(com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getRepositories(context)) }
                             var extensionListings by remember { mutableStateOf(emptyList<com.lagradost.quicknovel.extensions.ExtensionListing>()) }
+                            var installedExtensions by remember { mutableStateOf(com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)) }
                             var repositoryStatus by remember { mutableStateOf("Add an LNReader-compatible repository manifest URL.") }
                             var repositoryRefreshing by remember { mutableStateOf(false) }
 
@@ -249,6 +250,7 @@ object SettingScreen : SearchableSettings {
                                     }
                                     repositoryRefreshing = false
                                     extensionRepositories = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getRepositories(context)
+                                    installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
                                 }
                             }
 
@@ -324,10 +326,42 @@ object SettingScreen : SearchableSettings {
                                             item {
                                                 Text("Available extensions (${extensionListings.size})", style = MaterialTheme.typography.titleSmall)
                                             }
+                                            item {
+                                                Text("Installed bundles (${installedExtensions.size})", style = MaterialTheme.typography.titleSmall)
+                                                Text("Installed bundles are downloaded but not executable until the JavaScript runtime and source adapter are connected.", style = MaterialTheme.typography.bodySmall)
+                                            }
                                             items(extensionListings.take(30)) { entry ->
-                                                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                                val installed = installedExtensions.firstOrNull { it.id == entry.id }
+                                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                                     Text(entry.name, style = MaterialTheme.typography.bodyMedium)
                                                     Text("${entry.site} · ${entry.language} · ${entry.version}", style = MaterialTheme.typography.bodySmall)
+                                                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                                        Button(
+                                                            onClick = {
+                                                                repositoryStatus = if (installed == null) "Downloading ${entry.name}…" else "Updating ${entry.name}…"
+                                                                scope.launch {
+                                                                    val result = withContext(Dispatchers.IO) {
+                                                                        com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.install(context, entry)
+                                                                    }
+                                                                    result.onSuccess {
+                                                                        installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
+                                                                        repositoryStatus = "${entry.name} downloaded. It is not runnable yet; runtime integration is still being built."
+                                                                    }.onFailure { error ->
+                                                                        repositoryStatus = error.message ?: "Could not install ${entry.name}."
+                                                                    }
+                                                                }
+                                                            },
+                                                            enabled = !repositoryRefreshing
+                                                        ) { Text(if (installed == null) "Install" else "Update") }
+                                                        if (installed != null) {
+                                                            TextButton(onClick = {
+                                                                val removed = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.uninstall(context, entry.id)
+                                                                installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
+                                                                repositoryStatus = if (removed) "${entry.name} uninstalled." else "Could not uninstall ${entry.name}."
+                                                            }) { Text("Uninstall") }
+                                                            Text("Installed", style = MaterialTheme.typography.bodySmall)
+                                                        }
+                                                    }
                                                 }
                                             }
                                             if (extensionListings.size > 30) {
