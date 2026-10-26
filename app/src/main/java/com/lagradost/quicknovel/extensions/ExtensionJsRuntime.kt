@@ -357,6 +357,104 @@ object ExtensionJsRuntime {
                       var readOnlyStorage = {get:function(){return undefined;}};
                       return {storage:storage,localStorage:readOnlyStorage,sessionStorage:readOnlyStorage};
                     }
+                    if (name === 'dayjs') {
+                      var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+                      var shortMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                      function parseDate(input, format) {
+                        if (input == null || input === '') return input == null ? new Date() : new Date(NaN);
+                        if (input instanceof Date) return new Date(input.getTime());
+                        if (typeof input === 'number') return new Date(input);
+                        var text = String(input);
+                        if (format === 'DD.MM.YYYY') {
+                          var match = text.match(/^(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})$/);
+                          if (!match) return new Date(NaN);
+                          return new Date(Number(match[3]), Number(match[2])-1, Number(match[1]));
+                        }
+                        return new Date(text);
+                      }
+                      function makeDate(date) {
+                        function valid() { return !isNaN(date.getTime()); }
+                        function pad(value) { return value < 10 ? '0' + value : String(value); }
+                        function unitName(unit) {
+                          unit = String(unit || 'millisecond').toLowerCase();
+                          if (unit === 'd' || unit.indexOf('day') === 0) return 'day';
+                          if (unit === 'h' || unit.indexOf('hour') === 0) return 'hour';
+                          if (unit === 'm' || unit.indexOf('minute') === 0) return 'minute';
+                          if (unit === 's' || unit.indexOf('second') === 0) return 'second';
+                          if (unit === 'w' || unit.indexOf('week') === 0) return 'week';
+                          if (unit === 'M' || unit.indexOf('month') === 0) return 'month';
+                          if (unit === 'y' || unit.indexOf('year') === 0) return 'year';
+                          return 'millisecond';
+                        }
+                        var api = {
+                          isValid: valid,
+                          valueOf: function() { return date.getTime(); },
+                          unix: function() { return Math.floor(date.getTime()/1000); },
+                          toDate: function() { return new Date(date.getTime()); },
+                          toISOString: function() { return valid() ? date.toISOString() : null; },
+                          date: function() { return date.getDate(); },
+                          month: function() { return date.getMonth(); },
+                          year: function() { return date.getFullYear(); },
+                          format: function(pattern) {
+                            if (!valid()) return 'Invalid Date';
+                            pattern = pattern || 'YYYY-MM-DDTHH:mm:ssZ';
+                            if (pattern === 'LL') pattern = 'MMMM D, YYYY';
+                            if (pattern === 'LLL') pattern = 'MMMM D, YYYY h:mm A';
+                            var hour = date.getHours(), offset = -date.getTimezoneOffset();
+                            var zone = (offset >= 0 ? '+' : '-') + pad(Math.floor(Math.abs(offset)/60)) + ':' + pad(Math.abs(offset)%60);
+                            var values = {
+                              YYYY:String(date.getFullYear()), YY:String(date.getFullYear()).slice(-2),
+                              MMMM:months[date.getMonth()], MMM:shortMonths[date.getMonth()],
+                              MM:pad(date.getMonth()+1), M:String(date.getMonth()+1),
+                              DD:pad(date.getDate()), D:String(date.getDate()),
+                              HH:pad(hour), H:String(hour), hh:pad(hour%12 || 12), h:String(hour%12 || 12),
+                              mm:pad(date.getMinutes()), m:String(date.getMinutes()),
+                              ss:pad(date.getSeconds()), s:String(date.getSeconds()),
+                              A:hour < 12 ? 'AM' : 'PM', a:hour < 12 ? 'am' : 'pm', Z:zone
+                            };
+                            return pattern.replace(/YYYY|MMMM|MMM|YY|MM|M|DD|D|HH|H|hh|h|mm|m|ss|s|A|a|Z/g, function(token) { return values[token]; });
+                          },
+                          add: function(amount, unit) {
+                            var copy = new Date(date.getTime()), n = Number(amount), u = unitName(unit);
+                            if (u === 'year') copy.setFullYear(copy.getFullYear()+n);
+                            else if (u === 'month') copy.setMonth(copy.getMonth()+n);
+                            else if (u === 'week') copy.setDate(copy.getDate()+n*7);
+                            else if (u === 'day') copy.setDate(copy.getDate()+n);
+                            else if (u === 'hour') copy.setHours(copy.getHours()+n);
+                            else if (u === 'minute') copy.setMinutes(copy.getMinutes()+n);
+                            else if (u === 'second') copy.setSeconds(copy.getSeconds()+n);
+                            else copy.setTime(copy.getTime()+n);
+                            return makeDate(copy);
+                          },
+                          subtract: function(amount, unit) { return api.add(-Number(amount), unit); },
+                          startOf: function(unit) {
+                            var copy = new Date(date.getTime()), u = unitName(unit);
+                            if (u === 'year') { copy.setMonth(0); copy.setDate(1); copy.setHours(0,0,0,0); }
+                            else if (u === 'month') { copy.setDate(1); copy.setHours(0,0,0,0); }
+                            else if (u === 'day') copy.setHours(0,0,0,0);
+                            else if (u === 'hour') copy.setMinutes(0,0,0);
+                            else if (u === 'minute') copy.setSeconds(0,0);
+                            else if (u === 'second') copy.setMilliseconds(0);
+                            return makeDate(copy);
+                          },
+                          endOf: function(unit) {
+                            var u = unitName(unit), next = api.startOf(unit).add(1, unit);
+                            return makeDate(new Date(next.valueOf()-1));
+                          },
+                          diff: function(other, unit) {
+                            var delta = date.getTime() - parseDate(other).getTime(), u = unitName(unit);
+                            var divisor = u === 'week' ? 604800000 : u === 'day' ? 86400000 : u === 'hour' ? 3600000 : u === 'minute' ? 60000 : u === 'second' ? 1000 : 1;
+                            return Math.trunc(delta/divisor);
+                          },
+                          isBefore: function(other) { return date.getTime() < parseDate(other).getTime(); },
+                          isAfter: function(other) { return date.getTime() > parseDate(other).getTime(); },
+                          isSame: function(other) { return date.getTime() === parseDate(other).getTime(); }
+                        };
+                        return api;
+                      }
+                      function dayjs(input, format) { return makeDate(parseDate(input, format)); }
+                      return {default:dayjs};
+                    }
                     if (name === '@libs/isAbsoluteUrl') return {
                       isUrlAbsolute: function(url) { return String(url).toLowerCase().indexOf('http') === 0; }
                     };
