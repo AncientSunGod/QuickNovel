@@ -68,6 +68,8 @@ class ExtensionRepositoryManagerTest {
         assertFalse(ExtensionRepositoryManager.isValidExtensionId("reader\\other"))
         assertFalse(ExtensionRepositoryManager.isValidExtensionId("reader:other"))
         assertFalse(ExtensionRepositoryManager.isValidExtensionId(""))
+        assertFalse(ExtensionRepositoryManager.isValidExtensionId("."))
+        assertFalse(ExtensionRepositoryManager.isValidExtensionId(".."))
         assertFalse(ExtensionRepositoryManager.isValidExtensionId("a".repeat(121)))
     }
 }
