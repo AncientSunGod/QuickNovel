@@ -40,8 +40,9 @@ object ExtensionHttpClient {
     fun getText(
         rawUrl: String,
         headers: Map<String, String> = emptyMap(),
+        allowedHosts: Set<String>? = null,
     ): Result<TextResponse> = runCatching {
-        var currentUrl = validateUrl(rawUrl)
+        var currentUrl = validateUrl(rawUrl, allowedHosts)
         val safeHeaders = headers.entries
             .filter { it.key.lowercase(Locale.ROOT) in allowedRequestHeaders }
             .associate { (key, value) ->
@@ -69,7 +70,7 @@ object ExtensionHttpClient {
                     if (redirectIndex >= MAX_REDIRECTS) {
                         throw IllegalStateException("Extension request exceeded the redirect limit.")
                     }
-                    currentUrl = validateUrl(URL(currentUrl).toURI().resolve(location).toString())
+                    currentUrl = validateUrl(URL(currentUrl).toURI().resolve(location).toString(), allowedHosts)
                     return@repeat
                 }
 
@@ -105,13 +106,22 @@ object ExtensionHttpClient {
         throw IllegalStateException("Extension request could not be completed.")
     }
 
-    private fun validateUrl(value: String): String {
+    private fun validateUrl(value: String, allowedHosts: Set<String>? = null): String {
         val parsed = URL(value)
         require(parsed.protocol == "https" || parsed.protocol == "http") {
             "Extension requests must use HTTP or HTTPS."
         }
         require(!parsed.host.isNullOrBlank() && parsed.userInfo == null) {
             "Extension request URL is invalid."
+        }
+        val host = parsed.host.lowercase(Locale.ROOT).trimEnd('.')
+        require(host != "localhost" && !host.endsWith(".localhost")) {
+            "Localhost extension requests are blocked."
+        }
+        require(allowedHosts == null || allowedHosts.any {
+            host.equals(it.lowercase(Locale.ROOT).trimEnd('.'), ignoreCase = true)
+        }) {
+            "Extension request host is outside the approved site."
         }
         return parsed.toURI().normalize().toString()
     }
