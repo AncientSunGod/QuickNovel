@@ -23,7 +23,7 @@ Current helper support includes:
 
 - @libs/fetch: fetchApi and fetchText, GET only, with a request-header allowlist.
 - @libs/defaultCover, @libs/novelStatus, and @libs/filterInputs.
-- @libs/isAbsoluteUrl and urlencode.
+- @libs/isAbsoluteUrl, urlencode, and per-extension persistent @libs/storage key/value data.
 - cheerio.load with common CSS selection, text/HTML/attribute access, nested find, iteration, basic traversal, and removal.
 - CommonJS-style exports and synchronous Promise patterns, including Promise.all.
 
