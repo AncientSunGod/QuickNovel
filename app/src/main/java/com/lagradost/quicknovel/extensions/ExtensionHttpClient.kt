@@ -32,6 +32,9 @@ object ExtensionHttpClient {
         "accept-language",
         "user-agent",
         "referer",
+        "authorization",
+        "cookie",
+        "origin",
     )
 
     /**
