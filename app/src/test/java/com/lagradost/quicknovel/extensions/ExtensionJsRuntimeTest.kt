@@ -67,4 +67,44 @@ class ExtensionJsRuntimeTest {
             file.delete()
         }
     }
+    @Test
+    fun supportsAsyncStyleBundleAndKnownLnReaderModules() {
+        val (extension, file) = extension(
+            "var cover = require('@libs/defaultCover'); " +
+                "var filters = require('@libs/filterInputs'); " +
+                "var status = require('@libs/novelStatus'); " +
+                "module.exports = { searchNovels: function(term) { " +
+                "return Promise.resolve([{name:term,path:'slug',cover:cover.defaultCover," +
+                "filter:filters.FilterTypes.Picker,status:status.NovelStatus.Ongoing}]); } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension,
+                "searchNovels",
+                """["sample"]""",
+            ).getOrThrow()
+            assertTrue(result.json.contains("\"name\":\"sample\""))
+            assertTrue(result.json.contains("\"filter\":\"Picker\""))
+            assertTrue(result.json.contains("\"status\":\"ongoing\""))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun fetchBridgeRejectsRequestsOutsideTheExtensionSite() {
+        val (extension, file) = extension(
+            "var fetch = require('@libs/fetch'); " +
+                "module.exports = { searchNovels: function() { " +
+                "return fetch.fetchApi('https://other.example/data').then(function(r) { return r.json(); }); } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]")
+            assertTrue(result.isFailure)
+            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("approved site"))
+        } finally {
+            file.delete()
+        }
+    }
+
 }
