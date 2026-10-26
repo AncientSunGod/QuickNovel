@@ -167,6 +167,22 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsCommonDayjsDateParsingFormattingAndSubtraction() {
+        val (extension, file) = extension(
+            "var dayjs = require('dayjs').default; " +
+                "module.exports = { searchNovels: function() { " +
+                "var parsed = dayjs('07.08.2026','DD.MM.YYYY'); " +
+                "return [{name:parsed.format('YYYY-MM-DD'),path:dayjs('2026-08-01').subtract(1,'day').format('YYYY-MM-DD')}]; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("""[{"name":"2026-08-07","path":"2026-07-31"}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun exposesStorageHelperMethodsToBundles() {
         val (extension, file) = extension(
             "var store = require('@libs/storage').storage; " +
