@@ -8,9 +8,9 @@ import org.json.JSONObject
 import java.net.URI
 
 /**
- * Converts the versioned JSON boundary used by a future JS adapter into QuickNovel's
- * native response models. This class does not execute JavaScript or perform network
- * requests; the runtime/host bridge must validate and produce the JSON first.
+ * Converts LNReader-style JSON results into QuickNovel's native response models.
+ * This class does not execute JavaScript or perform network requests; ExtensionMainAPI
+ * obtains JSON from the restricted runtime/host bridge before mapping it.
  *
  * JSON contract:
  * Search: [{ "title": "...", "url": "...", "posterUrl": "...", "latestChapter": "..." }]
