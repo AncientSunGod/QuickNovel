@@ -128,7 +128,7 @@ class ExtensionMainAPI internal constructor(
     }
 
     private fun stripInternalFragment(url: String): String =
-        url.substringBefore("#qn_ext_path=")
+        url.substringBefore("#")
 
     private fun JSONObject.text(key: String): String = optString(key, "").take(100_000).trim()
 
