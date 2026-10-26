@@ -54,7 +54,7 @@ object ExtensionJsRuntime {
             cx.optimizationLevel = -1
             cx.languageVersion = Context.VERSION_ES6
             cx.instructionObserverThreshold = OBSERVER_THRESHOLD
-            cx.classShutter = { false }
+            cx.setClassShutter { false }
 
             val scope = cx.initSafeStandardObjects()
             ScriptableObject.putProperty(scope, "module", cx.newObject(scope).apply {
