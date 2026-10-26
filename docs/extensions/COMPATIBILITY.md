@@ -24,7 +24,7 @@ Current helper support includes:
 
 - @libs/fetch: fetchApi and fetchText, GET only, with a request-header allowlist.
 - @libs/defaultCover, @libs/novelStatus, and @libs/filterInputs.
-- @libs/isAbsoluteUrl, urlencode, and per-extension persistent @libs/storage key/value data.
+- @libs/isAbsoluteUrl, urlencode, per-extension persistent @libs/storage key/value data, and a limited dayjs-compatible date helper.
 - cheerio.load with common CSS selection, text/HTML/attribute access, nested find, iteration, basic traversal, and removal.
 - CommonJS-style exports and synchronous Promise patterns, including Promise.all.
 
@@ -35,7 +35,7 @@ Networking is bounded by request-count, response-size, timeout, redirect, and ho
 The following are not currently implemented as complete LNReader-compatible modules:
 
 - Plugin settings UI and WebView-backed localStorage/sessionStorage values. The @libs/storage key/value store is now persisted per extension.
-- dayjs, htmlparser2, protobuf fetches, AES helpers, and general @libs/utils helpers.
+- htmlparser2, protobuf fetches, AES helpers, and general @libs/utils helpers.
 - Full Cheerio behavior and all selector methods.
 - Non-GET HTTP methods, full Fetch API behavior, arbitrary request scheduling, and true asynchronous Promise/microtask handling.
 - Plugin icons, custom JavaScript/CSS execution, and interactive extension settings.
