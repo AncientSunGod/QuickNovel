@@ -2,6 +2,9 @@ package com.lagradost.quicknovel.extensions
 
 import org.json.JSONArray
 import org.json.JSONObject
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import org.mozilla.javascript.BaseFunction
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.ContextFactory
@@ -97,6 +100,24 @@ object ExtensionJsRuntime {
             fetchFunction.parentScope = scope
             fetchFunction.prototype = ScriptableObject.getFunctionPrototype(scope)
             ScriptableObject.putProperty(scope, "__qnFetch", fetchFunction)
+            val htmlBridge = HtmlBridge(extension.site)
+            val htmlFunction = object : BaseFunction() {
+                override fun call(
+                    context: Context,
+                    callScope: Scriptable,
+                    thisObj: Scriptable,
+                    args: Array<out Any>,
+                ): Any {
+                    val command = args.getOrNull(0)?.toString().orEmpty()
+                    val selectionId = args.getOrNull(1)?.toString()?.toIntOrNull() ?: 0
+                    val value = args.getOrNull(2)?.toString()
+                    val index = args.getOrNull(3)?.toString()?.toIntOrNull()
+                    return htmlBridge.invoke(command, selectionId, value, index)
+                }
+            }
+            htmlFunction.parentScope = scope
+            htmlFunction.prototype = ScriptableObject.getFunctionPrototype(scope)
+            ScriptableObject.putProperty(scope, "__qnHtml", htmlFunction)
             val compatibilityBootstrap = """
                 (function() {
                   function QNPromise(executor) {
@@ -168,6 +189,57 @@ object ExtensionJsRuntime {
                         });
                       }
                     };
+                    if (name === 'cheerio') {
+                      function call(command, id, value, index) {
+                        return JSON.parse(__qnHtml(command, id, value == null ? '' : String(value), index == null ? '' : index));
+                      }
+                      function wrap(id) {
+                        var selection = {_qnSelectionId:id};
+                        Object.defineProperty(selection, 'length', {get:function(){return call('length',id);}});
+                        selection.text = function(){return call('text',id);};
+                        selection.html = function(){return call('html',id);};
+                        selection.attr = function(name){return call('attr',id,name);};
+                        selection.hasClass = function(name){return call('hasClass',id,name);};
+                        selection.first = function(){return wrap(call('first',id));};
+                        selection.last = function(){return wrap(call('last',id));};
+                        selection.eq = function(index){return wrap(call('eq',id,'',index));};
+                        selection.find = function(selector){return wrap(call('find',id,selector));};
+                        selection.children = function(selector){return wrap(call('children',id,selector || ''));};
+                        selection.parent = function(){return wrap(call('parent',id));};
+                        selection.next = function(){return wrap(call('next',id));};
+                        selection.prev = function(){return wrap(call('prev',id));};
+                        selection.remove = function(){call('remove',id);return selection;};
+                        selection.each = function(callback) {
+                          for (var i=0;i<selection.length;i++) {
+                            var item=selection.eq(i);
+                            callback.call(item,i,item);
+                          }
+                          return selection;
+                        };
+                        selection.map = function(callback) {
+                          var values=[];
+                          for (var i=0;i<selection.length;i++) values.push(callback.call(selection.eq(i),i,selection.eq(i)));
+                          return {get:function(){return values;},toArray:function(){return values;}};
+                        };
+                        selection.get = function(index) {
+                          if (index == null) { var all=[]; for(var i=0;i<selection.length;i++) all.push(selection.eq(i)); return all; }
+                          return selection.eq(index);
+                        };
+                        return selection;
+                      }
+                      function load(html) {
+                        var root = call('load',0,String(html == null ? '' : html));
+                        function $(selector) {
+                          if (selector && selector._qnSelectionId != null) return selector;
+                          return wrap(call('select',root,typeof selector === 'string' ? selector : '*'));
+                        }
+                        $.root = function(){return wrap(root);};
+                        $.html = function(){return call('html',root);};
+                        $.text = function(){return call('text',root);};
+                        return $;
+                      }
+                      return {load:load,default:{load:load}};
+                    }
                     if (name === '@libs/defaultCover') return {defaultCover: ''};
                     if (name === '@libs/novelStatus') return {
                       NovelStatus: {Ongoing:'ongoing', Completed:'completed', Paused:'paused', Dropped:'dropped'}
@@ -218,6 +290,94 @@ object ExtensionJsRuntime {
         val parsedResult = org.json.JSONTokener(output).nextValue()
         require(parsedResult != null) { "Extension returned invalid JSON." }
         ExecutionResult(output)
+    }
+
+    /**
+     * Small Cheerio-compatible selector surface backed by Jsoup. Only bounded HTML and CSS
+     * selectors cross the bridge; Java objects are never exposed to the JavaScript scope.
+     */
+    private class HtmlBridge(private val baseUrl: String) {
+        private val maxHtmlChars = 2 * 1024 * 1024
+        private val maxSelectorChars = 500
+        private val maxResults = 1_000
+        private var nextId = 1
+        private val documents = mutableMapOf<Int, Document>()
+        private val selections = mutableMapOf<Int, List<Element>>()
+
+        fun invoke(command: String, selectionId: Int, value: String?, index: Int?): String {
+            val result: Any? = when (command) {
+                "load" -> {
+                    val html = value.orEmpty()
+                    require(html.length <= maxHtmlChars) { "HTML input exceeds the 2 MB limit." }
+                    val id = nextId++
+                    documents[id] = Jsoup.parse(html, baseUrl)
+                    id
+                }
+                "select" -> {
+                    val selector = value.orEmpty()
+                    require(selector.isNotBlank() && selector.length <= maxSelectorChars) {
+                        "CSS selector is empty or too long."
+                    }
+                    val found = documents[selectionId]?.select(selector)
+                        ?: selections[selectionId].orEmpty().flatMap { parent ->
+                            parent.select(selector).filterNot { it === parent }
+                        }
+                    store(found)
+                }
+                "find" -> {
+                    val selector = value.orEmpty()
+                    require(selector.isNotBlank() && selector.length <= maxSelectorChars) {
+                        "CSS selector is empty or too long."
+                    }
+                    store(selections[selectionId].orEmpty().flatMap { parent ->
+                        parent.select(selector).filterNot { it === parent }
+                    })
+                }
+                "children" -> {
+                    val selector = value.orEmpty()
+                    require(selector.length <= maxSelectorChars) { "CSS selector is too long." }
+                    val children = selections[selectionId].orEmpty().flatMap { it.children() }
+                    store(if (selector.isBlank()) children else children.filter { it.matches(selector) })
+                }
+                "parent" -> store(selections[selectionId].orEmpty().mapNotNull { it.parent() }.distinct())
+                "next" -> store(selections[selectionId].orEmpty().mapNotNull { it.nextElementSibling() })
+                "prev" -> store(selections[selectionId].orEmpty().mapNotNull { it.previousElementSibling() })
+                "first" -> store(selections[selectionId].orEmpty().take(1))
+                "last" -> store(selections[selectionId].orEmpty().takeLast(1))
+                "eq" -> {
+                    val elements = selections[selectionId].orEmpty()
+                    val requested = index ?: 0
+                    val resolved = if (requested < 0) elements.size + requested else requested
+                    store(elements.getOrNull(resolved)?.let { listOf(it) }.orEmpty())
+                }
+                "length" -> documents[selectionId]?.let { 1 } ?: selections[selectionId].orEmpty().size
+                "text" -> documents[selectionId]?.text()?.take(100_000)
+                    ?: selections[selectionId].orEmpty().joinToString("") { it.text() }.take(100_000)
+                "html" -> documents[selectionId]?.html()?.take(100_000)
+                    ?: selections[selectionId].orEmpty().firstOrNull()?.html()?.take(100_000).orEmpty()
+                "attr" -> selections[selectionId].orEmpty().firstOrNull()?.let { element ->
+                    value?.let { if (element.hasAttr(it)) element.attr(it).take(100_000) else null }
+                }
+                "hasClass" -> selections[selectionId].orEmpty().firstOrNull()?.hasClass(value.orEmpty()) ?: false
+                "remove" -> {
+                    selections[selectionId].orEmpty().forEach { it.remove() }
+                    selectionId
+                }
+                else -> throw IllegalArgumentException("Unsupported HTML selector operation.")
+            }
+            return when (result) {
+                null -> "null"
+                is String -> JSONObject.quote(result)
+                is Number, is Boolean -> result.toString()
+                else -> result.toString()
+            }
+        }
+
+        private fun store(elements: List<Element>): Int {
+            val id = nextId++
+            selections[id] = elements.take(maxResults)
+            return id
+        }
     }
 
     private class BudgetedContextFactory(
