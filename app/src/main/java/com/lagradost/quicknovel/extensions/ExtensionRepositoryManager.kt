@@ -42,6 +42,7 @@ object ExtensionRepositoryManager {
     private const val EXTENSIONS_DIR = "extensions"
     private const val MAX_BUNDLE_BYTES = 8 * 1024 * 1024
     private const val MAX_MANIFEST_BYTES = 2 * 1024 * 1024
+    private val extensionIdPattern = Regex("[A-Za-z0-9._-]{1,120}")
 
     fun getRepositories(context: Context): List<String> =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -91,6 +92,9 @@ object ExtensionRepositoryManager {
         }
     }
 
+    /** IDs become directory names, so accept only a collision-free safe alphabet. */
+    fun isValidExtensionId(value: String): Boolean = extensionIdPattern.matches(value)
+
     fun refresh(context: Context): Result<List<ExtensionListing>> = runCatching {
         val listings = mutableListOf<ExtensionListing>()
         getRepositories(context).forEach { repositoryUrl ->
@@ -129,7 +133,7 @@ object ExtensionRepositoryManager {
                     val id = item.optString("id").trim()
                     val name = item.optString("name").trim()
                     val url = item.optString("url").trim()
-                    if (id.isBlank() || name.isBlank() || !isValidBundleUrl(url)) continue
+                    if (!isValidExtensionId(id) || name.isBlank() || !isValidBundleUrl(url)) continue
                     listings += ExtensionListing(
                         id = id,
                         name = name,
@@ -164,11 +168,12 @@ object ExtensionRepositoryManager {
             "Extension bundle must use a valid HTTP or HTTPS URL without embedded credentials."
         }
         val bundleUrl = URL(listing.url)
-        require(listing.id.isNotBlank()) { "Extension ID is missing." }
+        require(isValidExtensionId(listing.id)) {
+            "Extension ID must contain only letters, numbers, dots, underscores, or hyphens (maximum 120 characters)."
+        }
 
-        val safeId = listing.id.replace(Regex("[^A-Za-z0-9._-]"), "_").take(120)
-        require(safeId.isNotBlank()) { "Extension ID is invalid." }
-        val extensionDir = File(File(context.filesDir, EXTENSIONS_DIR), safeId)
+        // Do not rewrite IDs into directory names: e.g. "a/b" and "a_b" would collide.
+        val extensionDir = File(File(context.filesDir, EXTENSIONS_DIR), listing.id)
         if (!extensionDir.exists() && !extensionDir.mkdirs()) {
             throw IllegalStateException("Could not create extension storage.")
         }
@@ -186,6 +191,9 @@ object ExtensionRepositoryManager {
             }
             require(connection.url.protocol == "https" || connection.url.protocol == "http") {
                 "Extension download redirected to an unsupported protocol."
+            }
+            require(connection.url.userInfo == null) {
+                "Extension download redirected to a URL containing credentials."
             }
             val output = ByteArrayOutputStream()
             connection.inputStream.use { input ->
@@ -303,9 +311,8 @@ object ExtensionRepositoryManager {
     }
 
     fun uninstall(context: Context, id: String): Boolean {
-        val safeId = id.replace(Regex("[^A-Za-z0-9._-]"), "_").take(120)
-        if (safeId.isBlank()) return false
-        val directory = File(File(context.filesDir, EXTENSIONS_DIR), safeId)
+        if (!isValidExtensionId(id)) return false
+        val directory = File(File(context.filesDir, EXTENSIONS_DIR), id)
         return !directory.exists() || directory.deleteRecursively()
     }
 }
