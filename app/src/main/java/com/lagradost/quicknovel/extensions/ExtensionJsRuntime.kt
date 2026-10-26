@@ -409,7 +409,7 @@ object ExtensionJsRuntime {
                         if (typeof input === 'number') return new Date(input);
                         var text = String(input);
                         if (format === 'DD.MM.YYYY') {
-                          var match = text.match(/^(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})$/);
+                          var match = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
                           if (!match) return new Date(NaN);
                           return new Date(Number(match[3]), Number(match[2])-1, Number(match[1]));
                         }
