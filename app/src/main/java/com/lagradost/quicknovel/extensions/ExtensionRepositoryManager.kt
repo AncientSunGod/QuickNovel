@@ -172,8 +172,10 @@ object ExtensionRepositoryManager {
     /** Return only absolute HTTP(S) URLs without credentials for optional manifest assets. */
     private fun validOptionalHttpUrl(value: String): String? = runCatching {
         val parsed = URL(value)
+        val host = parsed.host?.lowercase(Locale.ROOT)?.trimEnd('.').orEmpty()
         if ((parsed.protocol == "https" || parsed.protocol == "http") &&
-            !parsed.host.isNullOrBlank() && parsed.userInfo == null
+            host.isNotBlank() && host != "localhost" && !host.endsWith(".localhost") &&
+            parsed.userInfo == null
         ) value else null
     }.getOrNull()
 
