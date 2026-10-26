@@ -156,8 +156,9 @@ class Apis {
         ).sortedBy { it.name }
 
         /**
-         * Include installed LNReader-compatible providers whenever an Activity context is
-         * available. The installed bundle is still validated by ExtensionMainAPI at call time.
+         * Include installed LNReader-compatible providers whenever an application context is
+         * available, including when no Activity is active. The bundle runs through the restricted
+         * ExtensionMainAPI bridge at call time.
          */
         val apis: List<MainAPI>
             get() {
