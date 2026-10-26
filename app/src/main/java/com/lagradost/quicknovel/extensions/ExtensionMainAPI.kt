@@ -58,7 +58,6 @@ class ExtensionMainAPI(
         val path = extractPluginPath(url) ?: return@withContext null
         val raw = execute("parseNovel", JSONArray().put(path)) ?: return@withContext null
         val novel = JSONObject(raw)
-        val canonicalUrl = stripInternalFragment(url)
         novel.put("url", url)
         novel.put("path", url)
 
