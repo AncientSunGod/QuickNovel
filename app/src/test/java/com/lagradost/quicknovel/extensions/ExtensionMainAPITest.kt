@@ -17,7 +17,7 @@ class ExtensionMainAPITest {
                 name = "Chikari test",
                 site = "https://chikari.moe",
                 version = "1",
-                language = "English",
+                language = "unknown",
                 url = "https://example.com/chikari.js",
                 repositoryUrl = "https://example.com/plugins.min.json",
                 bundlePath = bundle.absolutePath,
@@ -39,6 +39,7 @@ class ExtensionMainAPITest {
                 }
             }
 
+            assertEquals("en", api.lang)
             val search = kotlinx.coroutines.runBlocking { api.search("sample") }
             assertNotNull(search)
             assertEquals(1, search!!.size)
