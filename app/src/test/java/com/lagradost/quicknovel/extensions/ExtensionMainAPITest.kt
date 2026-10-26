@@ -25,6 +25,7 @@ class ExtensionMainAPITest {
             val api = ExtensionMainAPI(extension) { operation, args ->
                 when (operation) {
                     "searchNovels" -> """[{"name":"Sample Novel","path":"sample-novel","cover":"https://chikari.moe/cover.jpg"}]"""
+                    "popularNovels" -> """[{"name":"Popular Novel","path":"popular-novel"}]"""
                     "resolveUrl" -> {
                         val path = args.getString(0)
                         if (args.optBoolean(1)) {
@@ -45,6 +46,10 @@ class ExtensionMainAPITest {
             assertEquals(1, search!!.size)
             assertEquals("Sample Novel", search[0].name)
             assertTrue(search[0].url.contains("#qn_ext_path=sample-novel"))
+
+            val mainPage = kotlinx.coroutines.runBlocking { api.loadMainPage(1, null, null, null) }
+            assertEquals(1, mainPage.list.size)
+            assertEquals("Popular Novel", mainPage.list[0].name)
 
             val novel = kotlinx.coroutines.runBlocking { api.load(search[0].url) }
             assertNotNull(novel)
