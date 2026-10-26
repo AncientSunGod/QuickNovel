@@ -158,7 +158,7 @@ object ExtensionJsRuntime {
                             val envelope = JSONObject()
                                 .put("created", System.currentTimeMillis())
                                 .put("value", storedValue)
-                                .put("expires", expires)
+                            if (expires != null) envelope.put("expires", expires)
                             prefs.edit().putString(prefix + key, envelope.toString()).apply()
                             "null"
                         }
