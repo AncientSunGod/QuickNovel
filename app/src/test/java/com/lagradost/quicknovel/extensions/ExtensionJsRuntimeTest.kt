@@ -221,6 +221,23 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsDayjsWeekBoundariesAndCalendarMonthDiffs() {
+        val (extension, file) = extension(
+            "var dayjs = require('dayjs'); " +
+                "module.exports = { searchNovels: function() { " +
+                "var date = dayjs('2026-08-07T15:30:00'); " +
+                "return [{name:date.startOf('week').format('YYYY-MM-DD'), " +
+                "path:date.diff('2026-07-01T15:30:00','month')}]; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("""[{"name":"2026-08-02","path":1}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun exposesStorageHelperMethodsToBundles() {
         val (extension, file) = extension(
             "var store = require('@libs/storage').storage; " +
