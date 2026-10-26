@@ -16,7 +16,7 @@ The native adapter maps the supported LNReader operations to QuickNovel's provid
 4. Chapter reading calls parseChapter and returns its HTML/text.
 5. Opaque plugin paths are preserved in URL fragments so saved entries can route back to the extension without sending those fragments to the website.
 
-An upstream Chikari bundle is included as an MIT-licensed fixture. Tests exercise its search, novel-details, and chapter parsing operations with mocked site responses. Additional tests cover provider routing, Promise.all, fetchText, and common Cheerio selectors. **These tests have not yet been confirmed by a successful Android build/test run.**
+An upstream Chikari bundle is included as an MIT-licensed fixture. Tests exercise its search, novel-details, and chapter parsing operations with mocked site responses. Additional tests cover provider routing, Promise.all, fetchText, common Cheerio selectors, htmlparser2 callbacks, and basic date formatting. **These tests have not yet been confirmed by a successful Android build/test run.**
 
 ## Supported runtime subset
 
@@ -25,6 +25,7 @@ Current helper support includes:
 - @libs/fetch: fetchApi and fetchText, GET only, with a request-header allowlist.
 - @libs/defaultCover, @libs/novelStatus, and @libs/filterInputs.
 - @libs/isAbsoluteUrl, urlencode, per-extension persistent @libs/storage key/value data, and a limited dayjs-compatible date helper.
+- htmlparser2 Parser with bounded, synchronous onopentag/ontext/onclosetag callbacks.
 - cheerio.load with common CSS selection, text/HTML/attribute access, nested find, iteration, basic traversal, and removal.
 - CommonJS-style exports and synchronous Promise patterns, including Promise.all.
 
@@ -35,7 +36,7 @@ Networking is bounded by request-count, response-size, timeout, redirect, and ho
 The following are not currently implemented as complete LNReader-compatible modules:
 
 - Plugin settings UI and WebView-backed localStorage/sessionStorage values. The @libs/storage key/value store is now persisted per extension.
-- htmlparser2, protobuf fetches, AES helpers, and general @libs/utils helpers.
+- Other htmlparser2 callbacks/options, protobuf fetches, AES helpers, and general @libs/utils helpers.
 - Full Cheerio behavior and all selector methods.
 - Non-GET HTTP methods, full Fetch API behavior, arbitrary request scheduling, and true asynchronous Promise/microtask handling.
 - Plugin icons, custom JavaScript/CSS execution, and interactive extension settings.
