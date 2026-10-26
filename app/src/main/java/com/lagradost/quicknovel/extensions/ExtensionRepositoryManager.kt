@@ -23,6 +23,10 @@ data class ExtensionListing(
     val language: String,
     val url: String,
     val repositoryUrl: String,
+    val iconUrl: String? = null,
+    val customJsUrl: String? = null,
+    val customCssUrl: String? = null,
+    val hasSettings: Boolean = false,
 )
 
 data class InstalledExtension(
@@ -34,6 +38,10 @@ data class InstalledExtension(
     val url: String,
     val repositoryUrl: String,
     val bundlePath: String,
+    val iconUrl: String? = null,
+    val customJsUrl: String? = null,
+    val customCssUrl: String? = null,
+    val hasSettings: Boolean = false,
 )
 
 object ExtensionRepositoryManager {
@@ -143,6 +151,10 @@ object ExtensionRepositoryManager {
                         language = item.optString("lang", item.optString("language", "unknown")).trim(),
                         url = url,
                         repositoryUrl = repositoryUrl,
+                        iconUrl = item.optString("iconUrl").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                        customJsUrl = item.optString("customJS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                        customCssUrl = item.optString("customCSS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                        hasSettings = item.optBoolean("hasSettings", false),
                     )
                 }
             } finally {
@@ -152,6 +164,14 @@ object ExtensionRepositoryManager {
         listings.distinctBy { it.id }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
     }
+
+    /** Return only absolute HTTP(S) URLs without credentials for optional manifest assets. */
+    private fun validOptionalHttpUrl(value: String): String? = runCatching {
+        val parsed = URL(value)
+        if ((parsed.protocol == "https" || parsed.protocol == "http") &&
+            !parsed.host.isNullOrBlank() && parsed.userInfo == null
+        ) value else null
+    }.getOrNull()
 
     private fun isValidBundleUrl(value: String): Boolean = runCatching {
         val parsed = URL(value)
@@ -226,6 +246,10 @@ object ExtensionRepositoryManager {
             .put("lang", listing.language)
             .put("url", listing.url)
             .put("repositoryUrl", listing.repositoryUrl)
+            .put("iconUrl", listing.iconUrl)
+            .put("customJS", listing.customJsUrl)
+            .put("customCSS", listing.customCssUrl)
+            .put("hasSettings", listing.hasSettings)
 
         val tempBundle = File(extensionDir, "plugin.js.tmp")
         val tempMetadata = File(extensionDir, "manifest.json.tmp")
@@ -285,6 +309,10 @@ object ExtensionRepositoryManager {
             url = listing.url,
             repositoryUrl = listing.repositoryUrl,
             bundlePath = bundleFile.absolutePath,
+            iconUrl = listing.iconUrl,
+            customJsUrl = listing.customJsUrl,
+            customCssUrl = listing.customCssUrl,
+            hasSettings = listing.hasSettings,
         )
     }
 
@@ -306,6 +334,10 @@ object ExtensionRepositoryManager {
                     url = json.optString("url"),
                     repositoryUrl = json.optString("repositoryUrl"),
                     bundlePath = bundle.absolutePath,
+                    iconUrl = json.optString("iconUrl").takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                    customJsUrl = json.optString("customJS").takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                    customCssUrl = json.optString("customCSS").takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                    hasSettings = json.optBoolean("hasSettings", false),
                 )
             }.getOrNull()
         }.filterNotNull().sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
