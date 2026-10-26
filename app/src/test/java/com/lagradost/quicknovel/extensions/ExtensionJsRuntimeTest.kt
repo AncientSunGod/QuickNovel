@@ -92,6 +92,21 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsPromiseAllForBundledAsyncHelpers() {
+        val (extension, file) = extension(
+            "module.exports = { searchNovels: function() { " +
+                "return Promise['all']([Promise.resolve('a'), Promise.resolve('b')])" +
+                ".then(function(values) { return values; }); } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("""["a","b"]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun fetchBridgeRejectsRequestsOutsideTheExtensionSite() {
         val (extension, file) = extension(
             "var fetch = require('@libs/fetch'); " +
