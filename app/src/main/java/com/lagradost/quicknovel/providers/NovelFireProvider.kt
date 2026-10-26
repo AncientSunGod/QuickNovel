@@ -204,19 +204,41 @@ open class NovelFireProvider : MainAPI() {
                 "search[value]" to "",
                 "search[regex]" to "false",
                 "post_id" to id,
-                "only_bookmark" to "false"
+                "only_bookmark" to "false",
+                // Avoid serving a cached, stale DataTables response.
+                "_" to System.currentTimeMillis().toString()
             )
         ).parsed<AjaxChapterRoot>()
 
-        return response.data?.mapNotNull { item ->
-            val nSort = item.nSort ?: return@mapNotNull null
-
-            val rawTitle = item.title ?: "Chapter $nSort"
-            val chapterUrl = "$mainUrl/$sectionUrl/$bookSlug/chapter-$nSort"
+        val ajaxChapters = response.data?.mapNotNull { item ->
+            val rawSort = item.nSort?.trim() ?: return@mapNotNull null
+            val chapterNumber = rawSort.toDoubleOrNull() ?: return@mapNotNull null
+            val chapterSlug = if (chapterNumber % 1.0 == 0.0) {
+                chapterNumber.toLong().toString()
+            } else {
+                rawSort
+            }
+            val rawTitle = item.title?.takeIf { it.isNotBlank() } ?: "Chapter $chapterSlug"
+            val chapterUrl = "$mainUrl/$sectionUrl/$bookSlug/chapter-$chapterSlug"
             newChapterData(rawTitle, chapterUrl) {
                 this.dateOfRelease = item.createdAt
             }
         } ?: emptyList()
+
+        if (ajaxChapters.isNotEmpty()) return ajaxChapters
+
+        // The site sometimes returns an empty DataTables payload. Fall back to
+        // the novel's HTML chapter archive so novels don't appear to have 0 chapters.
+        val archiveUrl = "$mainUrl/$sectionUrl/$bookSlug/chapters?page=1"
+        val archiveDocument = app.get(archiveUrl).document
+        return archiveDocument.select(".chapter-list li").mapNotNull { element ->
+            val link = element.selectFirst("a[href]") ?: return@mapNotNull null
+            val href = link.attr("href").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val title = link.attr("title").takeIf { it.isNotBlank() }
+                ?: link.text().trim().takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            newChapterData(title, href)
+        }
     }
 
     suspend fun getRelated(id: String): List<SearchResponse> {
@@ -334,7 +356,7 @@ open class NovelFireProvider : MainAPI() {
     )
 
     data class AjaxChapterItem(
-        @JsonProperty("n_sort") val nSort: Int? = null,
+        @JsonProperty("n_sort") val nSort: String? = null,
         @JsonProperty("title") val title: String? = null,
         @JsonProperty("bookmark_created_at") val createdAt: String? = null
     )
