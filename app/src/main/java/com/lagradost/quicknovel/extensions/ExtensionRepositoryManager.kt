@@ -93,7 +93,8 @@ object ExtensionRepositoryManager {
     }
 
     /** IDs become directory names, so accept only a collision-free safe alphabet. */
-    fun isValidExtensionId(value: String): Boolean = extensionIdPattern.matches(value)
+    fun isValidExtensionId(value: String): Boolean =
+        value != "." && value != ".." && extensionIdPattern.matches(value)
 
     fun refresh(context: Context): Result<List<ExtensionListing>> = runCatching {
         val listings = mutableListOf<ExtensionListing>()
