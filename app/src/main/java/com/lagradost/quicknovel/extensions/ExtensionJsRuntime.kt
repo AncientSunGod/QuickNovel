@@ -264,6 +264,13 @@ object ExtensionJsRuntime {
                       }
                       return {load:load,default:{load:load}};
                     }
+                    if (name === '@libs/isAbsoluteUrl') return {
+                      isUrlAbsolute: function(url) { return /^https?:\\/\\//i.test(String(url)); }
+                    };
+                    if (name === 'urlencode') return {
+                      encode: function(value) { return encodeURIComponent(String(value)); },
+                      decode: function(value) { return decodeURIComponent(String(value)); }
+                    };
                     if (name === '@libs/defaultCover') return {defaultCover: ''};
                     if (name === '@libs/novelStatus') return {
                       NovelStatus: {Ongoing:'ongoing', Completed:'completed', Paused:'paused', Dropped:'dropped'}
