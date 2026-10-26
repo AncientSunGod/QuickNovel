@@ -1,5 +1,6 @@
 package com.lagradost.quicknovel.extensions
 
+import com.lagradost.quicknovel.ReleaseStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -90,6 +91,22 @@ class ExtensionResponseMapperTest {
         assertEquals("https://reader.example/chapter/1", result.data[0].url)
         assertEquals("2026-01-01", result.data[0].dateOfRelease)
         assertEquals("https://reader.example/chapter/2", result.data[1].url)
+    }
+
+    @Test
+    fun mapsObjectGenresAndReleaseStatusFromLnReaderResponses() {
+        val novel = ExtensionResponseMapper.parseNovel(
+            json = """{
+              "name":"Example","url":"/novel","status":"releasing",
+              "genres":[{"name":"Fantasy"},{"name":"Adventure"}],
+              "chapters":[{"name":"Chapter 1","path":"/chapter/1"}]
+            }""",
+            apiName = "Test provider",
+            baseUrl = "https://reader.example/",
+            requestedUrl = "https://reader.example/novel",
+        )
+        assertEquals(listOf("Fantasy", "Adventure"), novel.tags)
+        assertEquals(ReleaseStatus.Ongoing, novel.status)
     }
 
     @Test(expected = IllegalArgumentException::class)
