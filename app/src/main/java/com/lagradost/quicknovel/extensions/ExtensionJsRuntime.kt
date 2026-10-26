@@ -337,7 +337,7 @@ object ExtensionJsRuntime {
                     val selector = value.orEmpty()
                     require(selector.length <= maxSelectorChars) { "CSS selector is too long." }
                     val children = selections[selectionId].orEmpty().flatMap { it.children() }
-                    store(if (selector.isBlank()) children else children.filter { it.matches(selector) })
+                    store(if (selector.isBlank()) children else children.filter { it.`is`(selector) })
                 }
                 "parent" -> store(selections[selectionId].orEmpty().mapNotNull { it.parent() }.distinct())
                 "next" -> store(selections[selectionId].orEmpty().mapNotNull { it.nextElementSibling() })
