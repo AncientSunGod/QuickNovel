@@ -32,7 +32,7 @@ class ExtensionHtmlParserTest {
         assertEquals("Chapter One Chapter Two", ExtensionHtmlParser.text(html, "a.chapter").getOrThrow())
         assertEquals(
             "/chapter/2",
-            ExtensionHtmlParser.attribute(html, "a.chapter:nth-child(2)", "href").getOrThrow()
+            ExtensionHtmlParser.attribute(html, "article:nth-of-type(2) a.chapter", "href").getOrThrow()
         )
     }
 
