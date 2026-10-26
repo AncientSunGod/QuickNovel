@@ -111,19 +111,13 @@ object ExtensionRepositoryManager {
     fun refresh(context: Context): Result<List<ExtensionListing>> = runCatching {
         val listings = mutableListOf<ExtensionListing>()
         getRepositories(context).forEach { repositoryUrl ->
-            val connection = URL(repositoryUrl).openConnection() as HttpURLConnection
+            val connection = openValidatedConnection(
+                repositoryUrl, 12_000, 20_000, "application/json"
+            )
             try {
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 12_000
-                connection.readTimeout = 20_000
-                connection.setRequestProperty("Accept", "application/json")
-                connection.setRequestProperty("Cache-Control", "no-cache")
                 val status = connection.responseCode
                 if (status !in 200..299) {
                     throw IllegalStateException("Repository returned HTTP $status: $repositoryUrl")
-                }
-                require(connection.url.protocol == "https" || connection.url.protocol == "http") {
-                    "Repository redirected to an unsupported protocol."
                 }
                 val body = connection.inputStream.use { input ->
                     val output = ByteArrayOutputStream()
@@ -171,6 +165,54 @@ object ExtensionRepositoryManager {
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
     }
 
+    /**
+     * Follow redirects manually so every hop is checked before a request is made.
+     * Only HTTP(S) URLs without credentials or obvious local IP literals are allowed.
+     */
+    private fun openValidatedConnection(
+        initialUrl: String,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+        accept: String,
+    ): HttpURLConnection {
+        var current = URL(initialUrl)
+        repeat(6) { redirectIndex ->
+            require(isValidBundleUrl(current.toString())) {
+                "Extension URL must be a valid public HTTP or HTTPS URL."
+            }
+            val connection = current.openConnection() as HttpURLConnection
+            connection.instanceFollowRedirects = false
+            connection.requestMethod = "GET"
+            connection.connectTimeout = connectTimeoutMs
+            connection.readTimeout = readTimeoutMs
+            connection.setRequestProperty("Accept", accept)
+            connection.setRequestProperty("Cache-Control", "no-cache")
+            val status = try {
+                connection.responseCode
+            } catch (error: Exception) {
+                connection.disconnect()
+                throw error
+            }
+            if (status in 300..399) {
+                val location = connection.getHeaderField("Location")
+                connection.disconnect()
+                require(!location.isNullOrBlank()) {
+                    "Remote server returned a redirect without a location."
+                }
+                require(redirectIndex < 5) {
+                    "Remote server exceeded the 5-redirect limit."
+                }
+                current = URL(current, location)
+                require(isValidBundleUrl(current.toString())) {
+                    "Remote redirect target is not an allowed HTTP(S) URL."
+                }
+            } else {
+                return connection
+            }
+        }
+        throw IllegalStateException("Remote request could not be completed.")
+    }
+
     /** Return only absolute HTTP(S) URLs without credentials for optional manifest assets. */
     private fun validOptionalHttpUrl(value: String): String? = runCatching {
         val parsed = URL(value)
@@ -186,8 +228,8 @@ object ExtensionRepositoryManager {
 
     /**
      * Reject obvious loopback/private IP literals before any connection is opened.
-     * DNS names are checked again by the runtime's restricted HTTP bridge; this is
-     * not a complete defense against redirects or DNS rebinding in package downloads.
+     * Hostnames that resolve to private addresses and DNS rebinding are not fully
+     * covered by this static check; the extension runtime has additional request checks.
      */
     private fun isBlockedHost(rawHost: String): Boolean {
         val host = rawHost.lowercase(Locale.ROOT).trimEnd('.')
@@ -234,22 +276,13 @@ object ExtensionRepositoryManager {
             throw IllegalStateException("Could not create extension storage.")
         }
 
-        val connection = bundleUrl.openConnection() as HttpURLConnection
+        val connection = openValidatedConnection(
+            listing.url, 15_000, 30_000, "application/javascript, text/javascript, */*"
+        )
         val bundleBytes = try {
-            connection.instanceFollowRedirects = true
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 30_000
-            connection.setRequestProperty("Accept", "application/javascript, text/javascript, */*")
             val status = connection.responseCode
             if (status !in 200..299) {
                 throw IllegalStateException("Extension download returned HTTP $status.")
-            }
-            require(connection.url.protocol == "https" || connection.url.protocol == "http") {
-                "Extension download redirected to an unsupported protocol."
-            }
-            require(connection.url.userInfo == null) {
-                "Extension download redirected to a URL containing credentials."
             }
             val output = ByteArrayOutputStream()
             connection.inputStream.use { input ->
