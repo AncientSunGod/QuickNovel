@@ -107,6 +107,22 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsCommonCheerioLoadSelectTextAndAttributeCalls() {
+        val (extension, file) = extension(
+            "var cheerio = require('cheerio'); " +
+                "module.exports = { searchNovels: function() { " +
+                "var $ = cheerio.load('<div class=\"entry\"><a href=\"/novel\">Sample Novel</a></div>'); " +
+                "return [{name:$('.entry a').text(),path:$('.entry a').attr('href')}]; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("""[{"name":"Sample Novel","path":"/novel"}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun fetchBridgeRejectsRequestsOutsideTheExtensionSite() {
         val (extension, file) = extension(
             "var fetch = require('@libs/fetch'); " +
