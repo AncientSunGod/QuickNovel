@@ -123,6 +123,24 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsCheerioEachAndNestedFind() {
+        val (extension, file) = extension(
+            "var cheerio = require('cheerio'); " +
+                "module.exports = { searchNovels: function() { " +
+                "var $ = cheerio.load('<ul><li><a href=\"/one\"> One </a></li><li><a href=\"/two\">Two</a></li></ul>'); " +
+                "var items = []; $('li').each(function(i, el) { " +
+                "items.push({name:$(el).find('a').text().trim(),path:$(el).find('a').attr('href')}); }); " +
+                "return items; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("""[{"name":"One","path":"/one"},{"name":"Two","path":"/two"}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun supportsFetchTextAndCommonUrlHelpers() {
         val (extension, file) = extension(
             "var fetch = require('@libs/fetch'); " +
