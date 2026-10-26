@@ -265,7 +265,7 @@ object ExtensionJsRuntime {
                       return {load:load,default:{load:load}};
                     }
                     if (name === '@libs/isAbsoluteUrl') return {
-                      isUrlAbsolute: function(url) { return /^https?:\\/\\//i.test(String(url)); }
+                      isUrlAbsolute: function(url) { return String(url).toLowerCase().indexOf('http') === 0; }
                     };
                     if (name === 'urlencode') return {
                       encode: function(value) { return encodeURIComponent(String(value)); },
