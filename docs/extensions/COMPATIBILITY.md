@@ -2,82 +2,61 @@
 
 ## Current status
 
-QuickNovel can add a repository manifest, display its entries, download a bundle to private app storage, update it, and uninstall it. This is the **catalogue and package-management layer** only. A downloaded LNReader plugin is not yet a working QuickNovel provider.
+QuickNovel can add LNReader repository manifests, browse entries, install/update/uninstall bundles, and register installed bundles as native providers. A partial JavaScript runtime now supports the Chikari bundle's fetch/helper pattern, common Cheerio selectors, fetchText, and basic URL helpers.
 
-## Why a compatibility adapter is required
+**Compatibility is still partial and the feature is not release-ready.** Imports and APIs outside the supported subset can fail. The runtime uses Rhino inside the app process; instruction limits do not provide process isolation or a hard memory limit. The app warns before installation and warns that some extensions may not work.
 
-QuickNovel's native provider contract is the Kotlin `MainAPI` interface:
-- `search(query)` returns `List<SearchResponse>?`
-- `load(url)` returns a `LoadResponse?` (usually a `StreamResponse` with chapter entries)
-- `loadHtml(url)` returns chapter content
-- optional main-page methods return `HeadMainPageResponse`
+## Provider flow
 
-LNReader plugins commonly use a different JavaScript API and bundled module imports. A JavaScript engine by itself does not supply React Native, Metro module resolution, LNReader helper libraries, Cheerio, or QuickNovel's HTTP client. QuickNovel currently does not execute downloaded extension JavaScript. Therefore a bundle passing a JavaScript smoke test does not establish compatibility.
+The native adapter maps the supported LNReader operations to QuickNovel's provider contract:
 
-## Proposed adapter boundary
+1. Search calls searchNovels and maps novel title, path, and cover.
+2. Novel details call parseNovel and map metadata plus chapters.
+3. Chapter reading calls parseChapter and returns its HTML/text.
+4. Opaque plugin paths are preserved in URL fragments so saved entries can route back to the extension without sending those fragments to the website.
 
-A provider adapter must translate the following operations to QuickNovel's native model:
+An upstream Chikari bundle is included as an MIT-licensed fixture. Tests exercise its search, novel-details, and chapter parsing operations with mocked site responses. Additional tests cover provider routing, Promise.all, fetchText, and common Cheerio selectors. **These tests have not yet been confirmed by a successful Android build/test run.**
 
-1. Search: input query; output entries containing a title, canonical URL, and optional poster URL.
-2. Novel details: input canonical URL; output metadata plus an ordered chapter list.
-3. Chapter content: input chapter URL; output readable HTML/text.
-4. Networking: `ExtensionHttpClient` now provides a host-owned HTTP GET helper with bounded response sizes, connect/read timeouts, redirect limits, and no access to Android objects. It is not exposed to JavaScript yet; the eventual bridge must add call budgets and privacy controls.
-5. Parsing: a defined HTML parsing API rather than pretending browser DOM or Cheerio exists.
-6. Errors: return structured errors; never crash the app when a plugin fails.
+## Supported runtime subset
 
-The JavaScript side should expose a versioned, documented contract rather than attempting to execute arbitrary React Native bundles without their runtime. The host must invoke it on a worker thread and enforce a hard execution budget before enabling third-party code.
+Current helper support includes:
 
-## Security requirements before runtime activation
+- @libs/fetch: fetchApi and fetchText, GET only, with a request-header allowlist.
+- @libs/defaultCover, @libs/novelStatus, and @libs/filterInputs.
+- @libs/isAbsoluteUrl and urlencode.
+- cheerio.load with common CSS selection, text/HTML/attribute access, nested find, iteration, basic traversal, and removal.
+- CommonJS-style exports and synchronous Promise patterns, including Promise.all.
 
-- Do not run downloaded code on the UI thread.
-- Do not expose Android `Context`, files, reflection, app preferences, or Kotlin objects to a plugin.
-- Bound bundle and network response sizes; use timeouts and redirect limits.
-- Do not treat syntax success or exported names as a security review.
-- Make install/update atomic so a failed download cannot destroy the last working bundle.
-- Clearly identify the source repository and allow the user to uninstall an extension.
-- Treat a JavaScript engine's timeout and memory controls as necessary but not sufficient: the host must also restrict every exposed capability. A runtime that has no sandbox or process isolation must not be described as safe for arbitrary third-party code.
+Networking is bounded by request-count, response-size, timeout, redirect, and host restrictions. Requests and redirects are restricted to the extension's declared site host, and local/private network destinations are rejected. These controls reduce exposure but are not a security sandbox.
 
-## Implementation order
+## Known compatibility gaps
 
-1. Repository and package management (implemented).
-2. Select and verify a JavaScript engine that supports hard execution and memory limits, then document its isolation limits.
-3. Define and test the versioned QuickNovel JS provider contract.
-4. Connect the bounded HTTP helper through a controlled host bridge and implement HTML parsing.
-5. Adapt a small, permissively licensed test extension end-to-end.
-6. Only then connect compatible extensions to provider discovery and reading screens.
+The following are not currently implemented as complete LNReader-compatible modules:
 
-Until steps 2–5 are complete, the UI should describe installed bundles as installed extensions, not claim they are active providers.
+- @libs/storage, localStorage/sessionStorage persistence, and plugin settings.
+- dayjs, htmlparser2, protobuf fetches, AES helpers, and general @libs/utils helpers.
+- Full Cheerio behavior and all selector methods.
+- Non-GET HTTP methods, full Fetch API behavior, arbitrary request scheduling, and true asynchronous Promise/microtask handling.
+- Plugin icons, custom JavaScript/CSS execution, and interactive extension settings.
 
-## Runtime investigation (October 2026)
+Plugins using these features may fail even if they install successfully. Unknown imports fail explicitly rather than being silently replaced with fake implementations.
 
-The current candidate to prototype is AndroidX JavaScriptEngine's `JavaScriptSandbox`, rather than enabling the old in-process QuickJS binding. Android's documentation says JavaScript runs in a separate sandboxed process and requires a runtime support check; support depends on API level (26+) and the installed WebView implementation. Heap limits and isolate-termination features are optional and must be checked at runtime. A future adapter must not assume these features exist on every device.
+## Security and release requirements
 
-Reference: [Android Developers — Executing JavaScript and WebAssembly](https://developer.android.com/develop/ui/views/layout/webapps/jsengine).
+Downloaded JavaScript currently executes in-process. The runtime disables Java class access, limits instruction count, caps inputs/outputs, and exposes only narrow host functions, but it does not have process isolation or a hard memory limit. Do not describe it as safe for arbitrary third-party code.
 
-This is a candidate, not an implementation or a security guarantee. A first dependency probe confirmed an important compatibility blocker: this app currently supports minSdk 23, while `androidx.javascriptengine:javascriptengine:1.1.1` declares minSdk 26. Adding it directly breaks Android manifest merging. The dependency and probe were therefore reverted rather than silently dropping Android 6–7 support or forcing a manifest override. Before adopting it, decide whether to keep minSdk 23 with a separately isolated runtime/module strategy or deliberately raise the minimum supported Android version. Then test actual timeout/cancellation and memory-limit behavior on supported devices and provide a clear unavailable-runtime message where required features are missing. A host-side future timeout alone is not proof that computation stopped; the isolate must be terminated or discarded using a supported mechanism.
+Before treating this feature as release-ready:
 
-[Cash App Zipline](https://github.com/cashapp/zipline) is not a drop-in runtime for arbitrary LNReader bundles: it is designed around Kotlin/JS modules and service interfaces, and its own documentation explicitly says it does not provide a sandbox or process isolation for untrusted code. Its QuickJS memory/interrupt controls are useful engineering references, but do not make it a safe substitute for process isolation.
+1. Run the Android unit tests and assemble the debug APK successfully.
+2. Exercise a real extension through search → novel details → chapter reading in the app.
+3. Add compatibility fixtures for more than one repository plugin and cover common failures.
+4. Choose a runtime with genuine process isolation compatible with the app's minimum Android version, or explicitly decide to raise that minimum. A previous probe found that AndroidX JavaScriptEngine 1.1.1 declares minSdk 26 while QuickNovel currently supports minSdk 23; adding it directly breaks manifest merging.
+5. Keep networking restrictions, execution budgets, user-visible source attribution, confirmation before install/update, and an easy uninstall path.
 
-Even with a process-isolated engine, extension code must receive only a narrow, explicit bridge. No ambient Android access, filesystem access, arbitrary native calls, or unrestricted networking should be exposed. The host must enforce request counts, response-size limits, allowed headers, redirect policy, per-operation deadlines, and output-size limits independently of what the plugin requests.
+Cash App Zipline is not a drop-in sandbox for arbitrary LNReader bundles: it is designed around Kotlin/JS modules and its documentation says it does not provide sandboxing or process isolation for untrusted code.
 
-## Bounded JavaScript execution prototype (October 2026)
+## References
 
-An in-process Rhino execution core now exists in `ExtensionJsRuntime`. It can execute a small CommonJS-style export and enforces an instruction-count budget; tests cover a successful simple export, a rejected unknown import, and an instruction-heavy function.
-
-**This does not make LNReader repository bundles runnable yet.** Real bundles may depend on Metro's module registry, asynchronous APIs, LNReader's helper modules, and Cheerio/htmlparser2 behavior. Those imports deliberately fail closed in this prototype. The engine also runs in the app process, so instruction limits alone do not prevent memory-exhaustion attacks; it must not be wired to downloaded third-party bundles as a production runtime.
-
-Next required work is to verify the Android build and test the complete search → details → chapter flow in the app. The adapter is connected to `MainAPI`, but compatibility remains partial and the in-process runtime is not a production security boundary.
-
-### HTML parser prototype
-
-`ExtensionHtmlParser` now provides bounded CSS-selector extraction, text extraction, and attribute lookup using the app's existing Jsoup dependency. Its input, selector, result-count, and text sizes are capped, with unit tests for representative HTML. This is a host-side building block, **not yet a Cheerio-compatible JavaScript module**: LNReader bundles cannot call it through `require('cheerio')` or `htmlparser2` yet.
-
-### First real-bundle compatibility slice
-
-The runtime now has a narrow module bridge for the imports used by the upstream **Chikari** English plugin: `@libs/fetch`, `@libs/defaultCover`, `@libs/novelStatus`, and `@libs/filterInputs`. Its fetch bridge allows GET requests only, caps each operation at 20 requests, restricts requests and redirects to the extension's declared site host, rejects localhost/private network resolutions, and uses the existing response/time limits. A synchronous Promise compatibility shim supports the transpiled async pattern used by that bundle.
-
-A native `ExtensionMainAPI` now adapts `searchNovels`, `parseNovel`, `parseChapter`, and optional `resolveUrl` into QuickNovel's provider interface. Installed extensions are included in provider discovery, and newly installed providers are enabled by default. Opaque LNReader paths are preserved in URL fragments so QuickNovel can route chapter loads back to the plugin without sending those fragments to the website.
-
-An upstream Chikari bundle is included as an MIT-licensed test fixture, and a test exercises its actual `searchNovels` function with a deterministic mocked API response. This validates one real bundle's module-loading and async pattern; it does **not** establish broad compatibility with all repository plugins. Plugins importing other helpers, Cheerio/htmlparser2, settings/storage APIs, or requiring true asynchronous scheduling remain unsupported. Rhino still runs in-process, so the instruction budget is not equivalent to process isolation or a hard memory limit.
-
-Build/CI verification for these newest commits is still pending; the repository status endpoint returned no checks in this session. Do not treat the feature as release-ready until the Android build and unit tests pass, and a real plugin's search → details → chapter flow is exercised through the UI.
+- [LNReader plugin documentation](https://github.com/LNReader/lnreader-plugins/tree/master/docs)
+- [Android JavaScriptEngine documentation](https://developer.android.com/develop/ui/views/layout/webapps/jsengine)
+- [Cash App Zipline](https://github.com/cashapp/zipline)
