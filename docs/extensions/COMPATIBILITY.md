@@ -59,3 +59,11 @@ This is a candidate, not an implementation or a security guarantee. A first depe
 [Cash App Zipline](https://github.com/cashapp/zipline) is not a drop-in runtime for arbitrary LNReader bundles: it is designed around Kotlin/JS modules and service interfaces, and its own documentation explicitly says it does not provide a sandbox or process isolation for untrusted code. Its QuickJS memory/interrupt controls are useful engineering references, but do not make it a safe substitute for process isolation.
 
 Even with a process-isolated engine, extension code must receive only a narrow, explicit bridge. No ambient Android access, filesystem access, arbitrary native calls, or unrestricted networking should be exposed. The host must enforce request counts, response-size limits, allowed headers, redirect policy, per-operation deadlines, and output-size limits independently of what the plugin requests.
+
+## Bounded JavaScript execution prototype (October 2026)
+
+An in-process Rhino execution core now exists in `ExtensionJsRuntime`. It can execute a small CommonJS-style export and enforces an instruction-count budget; tests cover a successful simple export, a rejected unknown import, and an instruction-heavy function.
+
+**This does not make LNReader repository bundles runnable yet.** Real bundles may depend on Metro's module registry, asynchronous APIs, LNReader's helper modules, and Cheerio/htmlparser2 behavior. Those imports deliberately fail closed in this prototype. The engine also runs in the app process, so instruction limits alone do not prevent memory-exhaustion attacks; it must not be wired to downloaded third-party bundles as a production runtime.
+
+Next required work remains: implement and test the actual LNReader bundle/module format, a compatible asynchronous fetch bridge, HTML parsing compatibility, and an isolation strategy that can stop a runaway operation without endangering the app. Then connect the tested adapter to `MainAPI` and validate search, novel details, and chapter reading against a real repository extension. Until that end-to-end test passes, extensions remain catalogued/installed but inactive.
