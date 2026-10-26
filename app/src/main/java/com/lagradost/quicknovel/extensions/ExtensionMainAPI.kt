@@ -59,8 +59,8 @@ class ExtensionMainAPI(
         val raw = execute("parseNovel", JSONArray().put(path)) ?: return@withContext null
         val novel = JSONObject(raw)
         val canonicalUrl = stripInternalFragment(url)
-        novel.put("url", canonicalUrl)
-        novel.put("path", canonicalUrl)
+        novel.put("url", url)
+        novel.put("path", url)
 
         val chapters = novel.optJSONArray("chapters") ?: JSONArray()
         for (index in 0 until chapters.length()) {
@@ -74,7 +74,7 @@ class ExtensionMainAPI(
             json = novel.toString(),
             apiName = name,
             baseUrl = "$mainUrl/",
-            requestedUrl = canonicalUrl,
+            requestedUrl = url,
         )
     }
 
