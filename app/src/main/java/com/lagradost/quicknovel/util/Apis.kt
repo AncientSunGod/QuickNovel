@@ -9,6 +9,8 @@ import com.lagradost.quicknovel.MainAPI
 import com.lagradost.quicknovel.R
 import com.lagradost.quicknovel.SearchResponse
 import com.lagradost.quicknovel.StreamResponse
+import com.lagradost.quicknovel.extensions.ExtensionMainAPI
+import com.lagradost.quicknovel.extensions.ExtensionRepositoryManager
 import com.lagradost.quicknovel.providers.AllNovelProvider
 import com.lagradost.quicknovel.providers.AnnasArchive
 import com.lagradost.quicknovel.providers.ArNoProvider
@@ -74,7 +76,7 @@ import com.lagradost.quicknovel.util.Coroutines.ioSafe
 
 class Apis {
     companion object {
-        val apis: List<MainAPI> = arrayOf(
+        private val builtInApis: List<MainAPI> = arrayOf(
             //AllProvider(),
             AllNovelProvider(),
             AnnasArchive(),
@@ -152,6 +154,23 @@ class Apis {
             //WuxiaWorldOnlineProvider(), // Site does not work
             //WuxiaWorldSiteProvider(),
         ).sortedBy { it.name }
+
+        /**
+         * Include installed LNReader-compatible providers whenever an Activity context is
+         * available. The installed bundle is still validated by ExtensionMainAPI at call time.
+         */
+        val apis: List<MainAPI>
+            get() {
+                val context = activity?.applicationContext ?: return builtInApis
+                val installed = runCatching {
+                    ExtensionRepositoryManager.getInstalledExtensions(context)
+                        .map { ExtensionMainAPI(it) }
+                }.getOrDefault(emptyList())
+                val builtInNames = builtInApis.map { it.name }.toSet()
+                return (builtInApis + installed.filterNot { it.name in builtInNames })
+                    .distinctBy { it.name }
+                    .sortedBy { it.name }
+            }
 
         fun getApiFromName(name: String): APIRepository {
             return getApiFromNameOrNull(name) ?: APIRepository(apis[1])
