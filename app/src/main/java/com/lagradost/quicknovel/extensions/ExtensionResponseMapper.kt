@@ -37,13 +37,17 @@ object ExtensionResponseMapper {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
                 val title = item.safeText("title").ifBlank { item.safeText("name") }
-                val url = resolveHttpUrl(baseUrl, item.safeText("url")) ?: continue
+                val url = resolveHttpUrl(
+                    baseUrl,
+                    item.safeText("url").ifBlank { item.safeText("path") },
+                ) ?: continue
                 if (title.isBlank()) continue
                 add(
                     SearchResponse(
                         name = title,
                         url = url,
                         posterUrl = item.safeText("posterUrl")
+                            .ifBlank { item.safeText("cover") }
                             .takeIf { it.isNotBlank() }
                             ?.let { resolveHttpUrl(baseUrl, it) },
                         latestChapter = item.safeText("latestChapter").takeIf { it.isNotBlank() },
@@ -63,7 +67,10 @@ object ExtensionResponseMapper {
         val item = JSONObject(json)
         val title = item.safeText("title").ifBlank { item.safeText("name") }
         require(title.isNotBlank()) { "Extension response is missing the novel title." }
-        val novelUrl = resolveHttpUrl(baseUrl, item.safeText("url").ifBlank { requestedUrl })
+        val novelUrl = resolveHttpUrl(
+            baseUrl,
+            item.safeText("url").ifBlank { item.safeText("path").ifBlank { requestedUrl } },
+        )
             ?: throw IllegalArgumentException("Extension returned an invalid novel URL.")
 
         val chaptersJson = item.optJSONArray("chapters")
@@ -78,13 +85,17 @@ object ExtensionResponseMapper {
                 val chapterTitle = chapter.safeText("title").ifBlank {
                     chapter.safeText("name")
                 }
-                val chapterUrl = resolveHttpUrl(baseUrl, chapter.safeText("url")) ?: continue
+                val chapterUrl = resolveHttpUrl(
+                    baseUrl,
+                    chapter.safeText("url").ifBlank { chapter.safeText("path") },
+                ) ?: continue
                 if (chapterTitle.isBlank()) continue
                 add(
                     ChapterData(
                         name = chapterTitle,
                         url = chapterUrl,
                         dateOfRelease = chapter.safeText("dateOfRelease")
+                            .ifBlank { chapter.safeText("releaseTime") }
                             .takeIf { it.isNotBlank() },
                     )
                 )
@@ -98,10 +109,16 @@ object ExtensionResponseMapper {
             apiName = apiName,
             author = item.safeText("author").takeIf { it.isNotBlank() },
             posterUrl = item.safeText("posterUrl")
+                .ifBlank { item.safeText("cover") }
                 .takeIf { it.isNotBlank() }
                 ?.let { resolveHttpUrl(baseUrl, it) },
-            synopsis = item.safeText("synopsis").takeIf { it.isNotBlank() },
-            tags = item.optJSONArray("tags").toTextList(),
+            synopsis = item.safeText("synopsis")
+                .ifBlank { item.safeText("summary") }
+                .takeIf { it.isNotBlank() },
+            tags = item.optJSONArray("tags").toTextList()
+                ?: item.optJSONArray("genres").toTextList()
+                ?: item.safeText("genres").split(",").map { it.trim() }
+                    .filter { it.isNotBlank() }.takeIf { it.isNotEmpty() },
         )
     }
 
