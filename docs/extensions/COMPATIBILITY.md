@@ -35,11 +35,12 @@ The JavaScript side should expose a versioned, documented contract rather than a
 - Do not treat syntax success or exported names as a security review.
 - Make install/update atomic so a failed download cannot destroy the last working bundle.
 - Clearly identify the source repository and allow the user to uninstall an extension.
+- Treat a JavaScript engine's timeout and memory controls as necessary but not sufficient: the host must also restrict every exposed capability. A runtime that has no sandbox or process isolation must not be described as safe for arbitrary third-party code.
 
 ## Implementation order
 
 1. Repository and package management (implemented).
-2. Select and verify a JavaScript engine that supports hard execution and memory limits.
+2. Select and verify a JavaScript engine that supports hard execution and memory limits, then document its isolation limits.
 3. Define and test the versioned QuickNovel JS provider contract.
 4. Connect the bounded HTTP helper through a controlled host bridge and implement HTML parsing.
 5. Adapt a small, permissively licensed test extension end-to-end.
