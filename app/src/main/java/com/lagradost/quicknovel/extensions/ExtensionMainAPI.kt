@@ -148,6 +148,7 @@ class ExtensionMainAPI internal constructor(
             "thai" -> "th"
             "turkish" -> "tr"
             "vietnamese" -> "vi"
+            "", "unknown", "und", "undefined" -> "en"
             else -> value.take(2).ifBlank { "en" }
         }
     }
