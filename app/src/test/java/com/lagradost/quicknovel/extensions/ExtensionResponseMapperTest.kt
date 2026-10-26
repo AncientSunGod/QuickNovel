@@ -46,10 +46,11 @@ class ExtensionResponseMapperTest {
         assertEquals("https://reader.example/images/one.jpg", results[0].posterUrl)
         assertEquals("Chapter 12", results[0].latestChapter)
         assertEquals("Test provider", results[0].apiName)
-        assertEquals("https://reader.example/series/two", results[1].url)
+        assertEquals("Unsafe poster", results[1].name)
+        assertEquals("https://reader.example/series/three", results[1].url)
         assertNull(results[1].posterUrl)
-        assertEquals("Unsafe poster", results[2].name)
-        assertEquals("https://reader.example/series/three", results[2].url)
+        assertEquals("Novel Two", results[2].name)
+        assertEquals("https://reader.example/series/two", results[2].url)
         assertNull(results[2].posterUrl)
     }
 
