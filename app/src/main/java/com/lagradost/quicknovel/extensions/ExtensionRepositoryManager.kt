@@ -231,6 +231,8 @@ object ExtensionRepositoryManager {
 
         var bundleBackedUp = false
         var metadataBackedUp = false
+        var newBundleInstalled = false
+        var newMetadataInstalled = false
         try {
             if (bundleFile.exists()) {
                 if (!bundleFile.renameTo(backupBundle)) {
@@ -247,12 +249,14 @@ object ExtensionRepositoryManager {
             if (!tempBundle.renameTo(bundleFile)) {
                 throw IllegalStateException("Could not save the new extension bundle.")
             }
+            newBundleInstalled = true
             if (!tempMetadata.renameTo(metadataFile)) {
                 throw IllegalStateException("Could not save the new extension metadata.")
             }
+            newMetadataInstalled = true
         } catch (error: Exception) {
-            bundleFile.delete()
-            metadataFile.delete()
+            if (newBundleInstalled) bundleFile.delete()
+            if (newMetadataInstalled) metadataFile.delete()
             if (bundleBackedUp) backupBundle.renameTo(bundleFile)
             if (metadataBackedUp) backupMetadata.renameTo(metadataFile)
             throw error
