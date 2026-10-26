@@ -92,6 +92,24 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun popularListingsUsePluginFilterDefaultsWhenNoFiltersAreConfigured() {
+        val (extension, file) = extension(
+            "module.exports = { filters:{genre:{value:'Fantasy'}}, " +
+                "popularNovels:function(page,options){return [{name:options.filters.genre.value,path:'sample'}];} };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension,
+                "popularNovels",
+                """[1,{"showLatestNovels":false,"filters":{}}]""",
+            ).getOrThrow()
+            assertEquals("""[{"name":"Fantasy","path":"sample"}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun supportsPromiseAllForBundledAsyncHelpers() {
         val (extension, file) = extension(
             "module.exports = { searchNovels: function() { " +
