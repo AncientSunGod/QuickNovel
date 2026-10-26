@@ -6,6 +6,7 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.URL
 import java.util.Locale
 
@@ -95,6 +96,7 @@ object ExtensionRepositoryManager {
             val parsed = URL(value)
             (parsed.protocol == "https" || parsed.protocol == "http") &&
                 !parsed.host.isNullOrBlank() &&
+                !isBlockedHost(parsed.host) &&
                 parsed.userInfo == null &&
                 parsed.path.lowercase(Locale.ROOT).endsWith("plugins.min.json")
         } catch (_: Exception) {
@@ -174,17 +176,44 @@ object ExtensionRepositoryManager {
         val parsed = URL(value)
         val host = parsed.host?.lowercase(Locale.ROOT)?.trimEnd('.').orEmpty()
         if ((parsed.protocol == "https" || parsed.protocol == "http") &&
-            host.isNotBlank() && host != "localhost" && !host.endsWith(".localhost") &&
+            host.isNotBlank() && !isBlockedHost(host) &&
             parsed.userInfo == null
         ) value else null
     }.getOrNull()
 
-    private fun isValidBundleUrl(value: String): Boolean = runCatching {
-        val parsed = URL(value)
-        (parsed.protocol == "https" || parsed.protocol == "http") &&
-            !parsed.host.isNullOrBlank() &&
-            parsed.userInfo == null
-    }.getOrDefault(false)
+    private fun isValidBundleUrl(value: String): Boolean =
+        validOptionalHttpUrl(value) != null
+
+    /**
+     * Reject obvious loopback/private IP literals before any connection is opened.
+     * DNS names are checked again by the runtime's restricted HTTP bridge; this is
+     * not a complete defense against redirects or DNS rebinding in package downloads.
+     */
+    private fun isBlockedHost(rawHost: String): Boolean {
+        val host = rawHost.lowercase(Locale.ROOT).trimEnd('.')
+        if (host == "localhost" || host.endsWith(".localhost")) return true
+        val literal = host.removePrefix("[").removeSuffix("]")
+        val isIpLiteral = literal.contains(':') ||
+            literal.matches(Regex("""\d{1,3}(?:\.\d{1,3}){3}"""))
+        if (!isIpLiteral) return false
+        val address = runCatching { InetAddress.getByName(literal) }.getOrNull() ?: return true
+        val bytes = address.address
+        val privateV4 = bytes.size == 4 && (
+            (bytes[0].toInt() and 0xff) == 10 ||
+            (bytes[0].toInt() and 0xff) == 127 ||
+            ((bytes[0].toInt() and 0xff) == 169 && (bytes[1].toInt() and 0xff) == 254) ||
+            ((bytes[0].toInt() and 0xff) == 172 && (bytes[1].toInt() and 0xff) in 16..31) ||
+            ((bytes[0].toInt() and 0xff) == 192 && (bytes[1].toInt() and 0xff) == 168) ||
+            ((bytes[0].toInt() and 0xff) == 100 && (bytes[1].toInt() and 0xff) in 64..127) ||
+            (bytes[0].toInt() and 0xff) == 0 ||
+            (bytes[0].toInt() and 0xff) >= 224
+        )
+        val firstV6 = if (bytes.size == 16) bytes[0].toInt() and 0xff else 0
+        val uniqueLocalV6 = bytes.size == 16 && (firstV6 and 0xfe) == 0xfc
+        return privateV4 || uniqueLocalV6 || address.isAnyLocalAddress ||
+            address.isLoopbackAddress || address.isLinkLocalAddress ||
+            address.isSiteLocalAddress || address.isMulticastAddress
+    }
 
     /**
      * Downloads an extension bundle into private app storage. The file is not executed
