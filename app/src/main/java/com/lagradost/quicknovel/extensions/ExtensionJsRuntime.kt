@@ -175,6 +175,9 @@ object ExtensionJsRuntime {
                                 .put("created", System.currentTimeMillis())
                                 .put("value", storedValue)
                             if (expires != null) envelope.put("expires", expires)
+                            require(prefix + key in prefs.all.keys || prefs.all.keys.count { it.startsWith(prefix) } < 500) {
+                                "Extension storage exceeded the 500-key limit."
+                            }
                             prefs.edit().putString(prefix + key, envelope.toString()).apply()
                             "null"
                         }
