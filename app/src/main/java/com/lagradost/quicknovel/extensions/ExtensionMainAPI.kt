@@ -20,8 +20,9 @@ import java.nio.charset.StandardCharsets
  * Fragments are never sent to the website, but preserve LNReader's opaque path values so
  * a saved novel/chapter can still be loaded after the in-memory search result is gone.
  */
-class ExtensionMainAPI(
+class ExtensionMainAPI internal constructor(
     private val extension: InstalledExtension,
+    private val operationOverride: ((String, JSONArray) -> String?)? = null,
 ) : MainAPI() {
     override val name: String = extension.name
     override val mainUrl: String = extension.site.trimEnd('/')
@@ -84,8 +85,9 @@ class ExtensionMainAPI(
     }
 
     private fun execute(operation: String, args: JSONArray): String? =
-        ExtensionJsRuntime.execute(extension, operation, args.toString())
-            .getOrNull()?.json
+        operationOverride?.invoke(operation, args)
+            ?: ExtensionJsRuntime.execute(extension, operation, args.toString())
+                .getOrNull()?.json
 
     private fun resolvePath(path: String, isNovel: Boolean): String {
         if (path.startsWith("https://", true) || path.startsWith("http://", true)) return path
