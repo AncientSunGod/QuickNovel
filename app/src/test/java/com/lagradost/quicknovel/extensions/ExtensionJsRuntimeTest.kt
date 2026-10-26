@@ -107,4 +107,38 @@ class ExtensionJsRuntimeTest {
         }
     }
 
+    @Test
+    fun executesRealChikariPluginBundleWithMockedSiteResponse() {
+        val source = javaClass.getResourceAsStream("/lnreader/chikari.js")!!
+            .bufferedReader()
+            .use { it.readText() }
+        val (extension, file) = extension(source)
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension = extension.copy(site = "https://chikari.moe"),
+                operation = "searchNovels",
+                argumentsJson = """["sample",1]""",
+                testFetchOverride = { url ->
+                    assertEquals(
+                        "https://chikari.moe/api/novels?sort=popular&q=sample&limit=36&offset=0",
+                        url,
+                    )
+                    ExtensionHttpClient.TextResponse(
+                        url = url,
+                        statusCode = 200,
+                        contentType = "application/json",
+                        body = """{"items":[{"title":"Sample Novel","slug":"sample-novel","cover_url":"https://chikari.moe/cover.jpg"}]}""",
+                    )
+                },
+            ).getOrThrow()
+            val items = org.json.JSONArray(result.json)
+            assertEquals(1, items.length())
+            assertEquals("Sample Novel", items.getJSONObject(0).getString("name"))
+            assertEquals("sample-novel", items.getJSONObject(0).getString("path"))
+            assertEquals("https://chikari.moe/cover.jpg", items.getJSONObject(0).getString("cover"))
+        } finally {
+            file.delete()
+        }
+    }
+
 }
