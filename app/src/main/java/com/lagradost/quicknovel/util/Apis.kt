@@ -38,6 +38,7 @@ import com.lagradost.quicknovel.providers.NovLoveProvider
 import com.lagradost.quicknovel.providers.NovelBinProvider
 import com.lagradost.quicknovel.providers.NovelBuddyProvider
 import com.lagradost.quicknovel.providers.NovelFireProvider
+import com.lagradost.quicknovel.providers.NovelArrowProvider
 import com.lagradost.quicknovel.providers.NovelFranceProvider
 import com.lagradost.quicknovel.providers.NovelFullNETProvider
 import com.lagradost.quicknovel.providers.NovelFullProvider
@@ -112,6 +113,7 @@ class Apis {
             NovelBinProvider(),
             NovelBuddyProvider(),
             NovelFireProvider(),
+            NovelArrowProvider(),
             NovelFullNETProvider(),
             NovelFullProvider(),
             NovelLightProvider(),
