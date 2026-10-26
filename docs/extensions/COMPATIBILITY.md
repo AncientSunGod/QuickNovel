@@ -21,7 +21,7 @@ A provider adapter must translate the following operations to QuickNovel's nativ
 1. Search: input query; output entries containing a title, canonical URL, and optional poster URL.
 2. Novel details: input canonical URL; output metadata plus an ordered chapter list.
 3. Chapter content: input chapter URL; output readable HTML/text.
-4. Networking: a host-owned HTTP bridge with bounded response sizes, connect/read timeouts, redirect limits, and no access to Android objects.
+4. Networking: `ExtensionHttpClient` now provides a host-owned HTTP GET helper with bounded response sizes, connect/read timeouts, redirect limits, and no access to Android objects. It is not exposed to JavaScript yet; the eventual bridge must add call budgets and privacy controls.
 5. Parsing: a defined HTML parsing API rather than pretending browser DOM or Cheerio exists.
 6. Errors: return structured errors; never crash the app when a plugin fails.
 
@@ -41,7 +41,7 @@ The JavaScript side should expose a versioned, documented contract rather than a
 1. Repository and package management (implemented).
 2. Select and verify a JavaScript engine that supports hard execution and memory limits.
 3. Define and test the versioned QuickNovel JS provider contract.
-4. Implement host-owned networking and HTML parsing bridges.
+4. Connect the bounded HTTP helper through a controlled host bridge and implement HTML parsing.
 5. Adapt a small, permissively licensed test extension end-to-end.
 6. Only then connect compatible extensions to provider discovery and reading screens.
 
