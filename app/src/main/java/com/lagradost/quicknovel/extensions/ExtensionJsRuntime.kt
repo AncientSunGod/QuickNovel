@@ -77,7 +77,7 @@ object ExtensionJsRuntime {
                 ScriptableObject.getProperty(scope, "module") as Scriptable,
                 "exports"
             ))
-            val approvedHost = URI(extension.site).host?.lowercase()
+            val approvedHost = URI(extension.site).host?.lowercase()?.trimEnd('.')
                 ?: throw IllegalArgumentException("Extension site URL is invalid.")
             var fetchCount = 0
             val fetchFunction = object : BaseFunction() {
