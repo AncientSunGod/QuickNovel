@@ -161,7 +161,9 @@ class Apis {
          */
         val apis: List<MainAPI>
             get() {
-                val context = activity?.applicationContext ?: return builtInApis
+                val context = activity?.applicationContext
+                    ?: com.lagradost.quicknovel.BaseApplication.context?.applicationContext
+                    ?: return builtInApis
                 val installed = runCatching {
                     ExtensionRepositoryManager.getInstalledExtensions(context)
                         .map { ExtensionMainAPI(it, context) }
