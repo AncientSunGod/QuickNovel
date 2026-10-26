@@ -39,7 +39,7 @@ The JavaScript side should expose a versioned, documented contract rather than a
 ## Implementation order
 
 1. Repository and package management (implemented).
-2. Verify the embedded JavaScript engine builds reliably.
+2. Select and verify a JavaScript engine that supports hard execution and memory limits.
 3. Define and test the versioned QuickNovel JS provider contract.
 4. Implement host-owned networking and HTML parsing bridges.
 5. Adapt a small, permissively licensed test extension end-to-end.
