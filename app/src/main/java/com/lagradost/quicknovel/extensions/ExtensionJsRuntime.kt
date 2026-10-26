@@ -577,27 +577,28 @@ object ExtensionJsRuntime {
             val document = Jsoup.parse(html, baseUrl)
             val events = JSONArray()
             var visited = 0
-            fun walk(node: Node) {
+            fun walk(node: Node, depth: Int) {
                 visited++
                 require(visited <= 10_000) { "HTML parser exceeded the node limit." }
+                require(depth <= 256) { "HTML parser exceeded the nesting-depth limit." }
                 when (node) {
-                    is Document -> node.childNodes().forEach(::walk)
+                    is Document -> node.childNodes().forEach { walk(it, depth + 1) }
                     is Element -> {
                         val attributes = JSONObject()
                         node.attributes().asList().take(100).forEach { attribute ->
                             attributes.put(attribute.key.take(100), attribute.value.take(10_000))
                         }
                         events.put(JSONObject().put("type", "open").put("name", node.tagName()).put("attribs", attributes))
-                        node.childNodes().forEach(::walk)
+                        node.childNodes().forEach { walk(it, depth + 1) }
                         events.put(JSONObject().put("type", "close").put("name", node.tagName()))
                     }
                     is TextNode -> events.put(JSONObject().put("type", "text").put("text", node.getWholeText().take(100_000)))
                     is DataNode -> events.put(JSONObject().put("type", "text").put("text", node.getWholeData().take(100_000)))
-                    else -> node.childNodes().forEach(::walk)
+                    else -> node.childNodes().forEach { walk(it, depth + 1) }
                 }
                 require(events.length() <= 20_000) { "HTML parser exceeded the event limit." }
             }
-            walk(document)
+            walk(document, 0)
             val result = events.toString()
             require(result.toByteArray(Charsets.UTF_8).size <= 2 * 1024 * 1024) {
                 "HTML parser output exceeds the 2 MB limit."
