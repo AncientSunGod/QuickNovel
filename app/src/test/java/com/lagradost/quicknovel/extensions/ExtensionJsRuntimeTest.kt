@@ -123,6 +123,32 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsFetchTextAndCommonUrlHelpers() {
+        val (extension, file) = extension(
+            "var fetch = require('@libs/fetch'); " +
+                "var absolute = require('@libs/isAbsoluteUrl'); " +
+                "var encoding = require('urlencode'); " +
+                "module.exports = { searchNovels: function() { " +
+                "return fetch.fetchText('https://example.com/data').then(function(body) { " +
+                "return [{name:body,path:encoding.encode('a b'),absolute:absolute.isUrlAbsolute('https://example.com/x')}]; }); } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension,
+                "searchNovels",
+                "[]",
+                testFetchOverride = { url ->
+                    assertEquals("https://example.com/data", url)
+                    ExtensionHttpClient.TextResponse(url, 200, "text/plain", "sample")
+                },
+            ).getOrThrow()
+            assertEquals("""[{"name":"sample","path":"a%20b","absolute":true}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun fetchBridgeRejectsRequestsOutsideTheExtensionSite() {
         val (extension, file) = extension(
             "var fetch = require('@libs/fetch'); " +
