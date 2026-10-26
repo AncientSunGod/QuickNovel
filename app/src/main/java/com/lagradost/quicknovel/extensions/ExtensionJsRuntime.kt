@@ -497,7 +497,8 @@ object ExtensionJsRuntime {
                         return api;
                       }
                       function dayjs(input, format) { return makeDate(parseDate(input, format)); }
-                      return {default:dayjs};
+                      dayjs.default = dayjs;
+                      return dayjs;
                     }
                     if (name === '@libs/isAbsoluteUrl') return {
                       isUrlAbsolute: function(url) { return String(url).toLowerCase().indexOf('http') === 0; }
