@@ -176,7 +176,8 @@ object ExtensionJsRuntime {
                                     val stored = envelope.opt("value")
                                     if (stored == null) "null"
                                     else if (stored is JSONObject || stored is JSONArray) stored.toString()
-                                    else JSONObject.wrap(stored).toString()
+                                    else if (stored is String) JSONObject.quote(stored)
+                                    else stored.toString()
                                 }
                             }
                         }
