@@ -34,10 +34,11 @@ object ExtensionJsRuntime {
 
     data class ExecutionResult(val json: String)
 
-    fun execute(
+    internal fun execute(
         extension: InstalledExtension,
         operation: String,
         argumentsJson: String,
+        testFetchOverride: ((String) -> ExtensionHttpClient.TextResponse)? = null,
     ): Result<ExecutionResult> = runCatching {
         require(operation in allowedOperations) { "Unsupported extension operation." }
         require(argumentsJson.toByteArray(Charsets.UTF_8).size <= MAX_ARGUMENT_BYTES) {
@@ -81,7 +82,7 @@ object ExtensionJsRuntime {
                     require(fetchCount <= 20) { "Extension exceeded the 20-request operation limit." }
                     val requestedUrl = args.firstOrNull()?.toString().orEmpty()
                     require(requestedUrl.isNotBlank()) { "Extension fetch URL is missing." }
-                    val response = ExtensionHttpClient.getText(
+                    val response = testFetchOverride?.invoke(requestedUrl) ?: ExtensionHttpClient.getText(
                         requestedUrl,
                         allowedHosts = setOf(approvedHost),
                     ).getOrThrow()
