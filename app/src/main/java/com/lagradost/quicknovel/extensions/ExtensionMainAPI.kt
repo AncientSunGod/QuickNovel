@@ -1,6 +1,7 @@
 package com.lagradost.quicknovel.extensions
 
 import android.content.Context
+import com.lagradost.quicknovel.HeadMainPageResponse
 import com.lagradost.quicknovel.MainAPI
 import com.lagradost.quicknovel.SearchResponse
 import com.lagradost.quicknovel.StreamResponse
@@ -29,11 +30,32 @@ class ExtensionMainAPI internal constructor(
     override val name: String = extension.name
     override val mainUrl: String = extension.site.trimEnd('/')
     override val lang: String = normalizeLanguage(extension.language)
+    override val hasMainPage: Boolean = true
 
     override suspend fun search(query: String): List<SearchResponse>? = withContext(Dispatchers.IO) {
         val json = execute("searchNovels", JSONArray().put(query).put(1)) ?: return@withContext null
+        mapSearchItems(json)
+    }
+
+    override suspend fun loadMainPage(
+        page: Int,
+        mainCategory: String?,
+        orderBy: String?,
+        tag: String?,
+    ): HeadMainPageResponse = withContext(Dispatchers.IO) {
+        val options = JSONObject()
+            .put("showLatestNovels", orderBy?.contains("latest", ignoreCase = true) == true)
+            .put("filters", JSONObject())
+        val json = execute("popularNovels", JSONArray().put(page).put(options))
+        HeadMainPageResponse(
+            url = mainUrl,
+            list = json?.let(::mapSearchItems).orEmpty(),
+        )
+    }
+
+    private fun mapSearchItems(json: String): List<SearchResponse> {
         val array = JSONArray(json)
-        buildList {
+        return buildList {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
                 val title = item.text("name").ifBlank { item.text("title") }
