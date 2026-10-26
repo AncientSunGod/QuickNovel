@@ -103,7 +103,8 @@ object ExtensionJsRuntime {
             "Extension result exceeds the 2 MB limit."
         }
         // Ensure the operation produced valid JSON before it crosses into app models.
-        val parsedResult = org.json.JSONTokener(output).nextValue()\n        require(parsedResult != null) { "Extension returned invalid JSON." }
+        val parsedResult = org.json.JSONTokener(output).nextValue()
+        require(parsedResult != null) { "Extension returned invalid JSON." }
         ExecutionResult(output)
     }
 
