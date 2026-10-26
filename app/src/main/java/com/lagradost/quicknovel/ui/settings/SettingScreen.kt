@@ -234,6 +234,7 @@ object SettingScreen : SearchableSettings {
                             var installedExtensions by remember { mutableStateOf(com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)) }
                             var repositoryStatus by remember { mutableStateOf("Add an LNReader-compatible repository manifest URL.") }
                             var repositoryRefreshing by remember { mutableStateOf(false) }
+                            var pendingExtensionInstall by remember { mutableStateOf<com.lagradost.quicknovel.extensions.ExtensionListing?>(null) }
 
                             fun refreshExtensionCatalog() {
                                 repositoryRefreshing = true
@@ -336,20 +337,7 @@ object SettingScreen : SearchableSettings {
                                                     Text("${entry.site} · ${entry.language} · ${entry.version}", style = MaterialTheme.typography.bodySmall)
                                                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                                         Button(
-                                                            onClick = {
-                                                                repositoryStatus = if (installed == null) "Downloading ${entry.name}…" else "Updating ${entry.name}…"
-                                                                scope.launch {
-                                                                    val result = withContext(Dispatchers.IO) {
-                                                                        com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.install(context, entry)
-                                                                    }
-                                                                    result.onSuccess {
-                                                                        installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
-                                                                        repositoryStatus = "${entry.name} installed. It is now available as a provider; compatibility depends on the plugin's module imports."
-                                                                    }.onFailure { error ->
-                                                                        repositoryStatus = error.message ?: "Could not install ${entry.name}."
-                                                                    }
-                                                                }
-                                                            },
+                                                            onClick = { pendingExtensionInstall = entry },
                                                             enabled = !repositoryRefreshing
                                                         ) { Text(if (installed == null) "Install" else "Update") }
                                                         if (installed != null) {
@@ -370,6 +358,39 @@ object SettingScreen : SearchableSettings {
                                     },
                                     confirmButton = {
                                         TextButton(onClick = { repositoryDialogOpen = false }) { Text("Done") }
+                                    }
+                                )
+                            }
+                            if (pendingExtensionInstall != null) {
+                                val entry = pendingExtensionInstall!!
+                                val isUpdate = installedExtensions.any { it.id == entry.id }
+                                AlertDialog(
+                                    onDismissRequest = { pendingExtensionInstall = null },
+                                    title = { Text(if (isUpdate) "Update ${entry.name}?" else "Install ${entry.name}?") },
+                                    text = {
+                                        Text(
+                                            "Extensions are third-party JavaScript. This compatibility runtime is partial and currently executes extension code inside QuickNovel's app process. Only install from a source you trust."
+                                        )
+                                    },
+                                    confirmButton = {
+                                        TextButton(onClick = {
+                                            pendingExtensionInstall = null
+                                            repositoryStatus = if (isUpdate) "Updating ${entry.name}…" else "Downloading ${entry.name}…"
+                                            scope.launch {
+                                                val result = withContext(Dispatchers.IO) {
+                                                    com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.install(context, entry)
+                                                }
+                                                result.onSuccess {
+                                                    installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
+                                                    repositoryStatus = "${entry.name} installed. It is now available as a provider; compatibility depends on the plugin's module imports."
+                                                }.onFailure { error ->
+                                                    repositoryStatus = error.message ?: "Could not install ${entry.name}."
+                                                }
+                                            }
+                                        }) { Text(if (isUpdate) "Update anyway" else "Install anyway") }
+                                    },
+                                    dismissButton = {
+                                        TextButton(onClick = { pendingExtensionInstall = null }) { Text("Cancel") }
                                     }
                                 )
                             }
