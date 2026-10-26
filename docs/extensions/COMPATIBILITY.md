@@ -47,3 +47,15 @@ The JavaScript side should expose a versioned, documented contract rather than a
 6. Only then connect compatible extensions to provider discovery and reading screens.
 
 Until steps 2–5 are complete, the UI should describe installed bundles as installed extensions, not claim they are active providers.
+
+## Runtime investigation (October 2026)
+
+The current candidate to prototype is AndroidX JavaScriptEngine's `JavaScriptSandbox`, rather than enabling the old in-process QuickJS binding. Android's documentation says JavaScript runs in a separate sandboxed process and requires a runtime support check; support depends on API level (26+) and the installed WebView implementation. Heap limits and isolate-termination features are optional and must be checked at runtime. A future adapter must not assume these features exist on every device.
+
+Reference: [Android Developers — Executing JavaScript and WebAssembly](https://developer.android.com/develop/ui/views/layout/webapps/jsengine).
+
+This is a candidate, not an implementation or a security guarantee. Before adopting it, verify the Jetpack dependency against this project's Gradle/Kotlin/Android configuration, test the actual timeout/cancellation and memory-limit behavior on supported devices, and provide a clear unavailable-runtime message where the platform lacks required features. A host-side future timeout alone is not proof that computation stopped; the isolate must be terminated or discarded using a supported mechanism.
+
+[Cash App Zipline](https://github.com/cashapp/zipline) is not a drop-in runtime for arbitrary LNReader bundles: it is designed around Kotlin/JS modules and service interfaces, and its own documentation explicitly says it does not provide a sandbox or process isolation for untrusted code. Its QuickJS memory/interrupt controls are useful engineering references, but do not make it a safe substitute for process isolation.
+
+Even with a process-isolated engine, extension code must receive only a narrow, explicit bridge. No ambient Android access, filesystem access, arbitrary native calls, or unrestricted networking should be exposed. The host must enforce request counts, response-size limits, allowed headers, redirect policy, per-operation deadlines, and output-size limits independently of what the plugin requests.
