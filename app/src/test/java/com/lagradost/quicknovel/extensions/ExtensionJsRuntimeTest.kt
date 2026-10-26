@@ -40,15 +40,15 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
-    fun rejectsUnimplementedImportsRatherThanFakingCompatibility() {
+    fun rejectsUnknownImportsRatherThanFakingCompatibility() {
         val (extension, file) = extension(
-            "var helper = require('@libs/fetch'); module.exports = { " +
+            "var helper = require('@unsupported/module'); module.exports = { " +
                 "searchNovels: function() { return []; } };"
         )
         try {
             val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]")
             assertTrue(result.isFailure)
-            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("not available"))
+            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("Unsupported LNReader module import"))
         } finally {
             file.delete()
         }
@@ -136,6 +136,59 @@ class ExtensionJsRuntimeTest {
             assertEquals("Sample Novel", items.getJSONObject(0).getString("name"))
             assertEquals("sample-novel", items.getJSONObject(0).getString("path"))
             assertEquals("https://chikari.moe/cover.jpg", items.getJSONObject(0).getString("cover"))
+        } finally {
+            file.delete()
+        }
+    }
+
+
+    @Test
+    fun executesRealChikariNovelDetailsAndChapterOperations() {
+        val source = javaClass.getResourceAsStream("/lnreader/chikari.js")!!
+            .bufferedReader()
+            .use { it.readText() }
+        val (extension, file) = extension(source)
+        try {
+            val details = ExtensionJsRuntime.execute(
+                extension = extension.copy(site = "https://chikari.moe"),
+                operation = "parseNovel",
+                argumentsJson = """["sample-novel"]""",
+                testFetchOverride = { url ->
+                    when (url) {
+                        "https://chikari.moe/api/novels/sample-novel" ->
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "application/json",
+                                """{"title":"Sample Novel","authors":[{"name":"Test Author"}],"genres":[{"name":"Fantasy"}],"description":"A sample.","status":"releasing"}""",
+                            )
+                        "https://chikari.moe/api/novels/sample-novel/chapters?order=asc&limit=500&offset=0" ->
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "application/json",
+                                """{"items":[{"title":"Chapter One","number":1,"created_at":"2026-10-01"}]}""",
+                            )
+                        else -> throw AssertionError("Unexpected Chikari request: $url")
+                    }
+                },
+            ).getOrThrow()
+            val novel = org.json.JSONObject(details.json)
+            assertEquals("Sample Novel", novel.getString("name"))
+            assertEquals("Test Author", novel.getString("author"))
+            assertEquals("api/novels/sample-novel/chapters/1/read",
+                novel.getJSONArray("chapters").getJSONObject(0).getString("path"))
+
+            val chapter = ExtensionJsRuntime.execute(
+                extension = extension.copy(site = "https://chikari.moe"),
+                operation = "parseChapter",
+                argumentsJson = """["api/novels/sample-novel/chapters/1/read"]""",
+                testFetchOverride = { url ->
+                    assertEquals("https://chikari.moe/api/novels/sample-novel/chapters/1/read", url)
+                    ExtensionHttpClient.TextResponse(
+                        url, 200, "application/json",
+                        """{"body":"First paragraph\\nSecond paragraph"}""",
+                    )
+                },
+            ).getOrThrow()
+            assertTrue(chapter.json.contains("<p>First paragraph</p>"))
+            assertTrue(chapter.json.contains("<p>Second paragraph</p>"))
         } finally {
             file.delete()
         }
