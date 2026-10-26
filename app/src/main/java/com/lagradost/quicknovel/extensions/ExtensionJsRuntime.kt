@@ -85,8 +85,20 @@ object ExtensionJsRuntime {
                     require(fetchCount <= 20) { "Extension exceeded the 20-request operation limit." }
                     val requestedUrl = args.firstOrNull()?.toString().orEmpty()
                     require(requestedUrl.isNotBlank()) { "Extension fetch URL is missing." }
+                    val headersJson = args.getOrNull(1)?.toString().orEmpty()
+                    val requestHeaders = runCatching {
+                        val json = JSONObject(headersJson)
+                        buildMap {
+                            val keys = json.keys()
+                            while (keys.hasNext()) {
+                                val key = keys.next()
+                                put(key, json.optString(key, ""))
+                            }
+                        }
+                    }.getOrDefault(emptyMap())
                     val response = testFetchOverride?.invoke(requestedUrl) ?: ExtensionHttpClient.getText(
                         requestedUrl,
+                        headers = requestHeaders,
                         allowedHosts = setOf(approvedHost),
                     ).getOrThrow()
                     return JSONObject()
@@ -177,9 +189,16 @@ object ExtensionJsRuntime {
                       fetchApi: function(url, init) {
                         if (init && init.method && String(init.method).toUpperCase() !== 'GET')
                           throw new Error('Only GET requests are supported by this extension bridge.');
-                        return Promise.resolve(JSON.parse(__qnFetch(String(url)))).then(function(r) {
+                        var headers = init && init.headers ? init.headers : {};
+                        if (headers && typeof headers.forEach === 'function') {
+                          var normalized = {};
+                          headers.forEach(function(value, key) { normalized[key] = value; });
+                          headers = normalized;
+                        }
+                        return Promise.resolve(JSON.parse(__qnFetch(String(url), JSON.stringify(headers)))).then(function(r) {
                           return {
                             url: r.url, status: r.statusCode, ok: r.statusCode >= 200 && r.statusCode < 300,
+                            statusText: String(r.statusCode), body: r.body,
                             text: function() { return Promise.resolve(r.body); },
                             json: function() { return Promise.resolve(JSON.parse(r.body)); },
                             headers: { get: function(key) {
@@ -187,6 +206,11 @@ object ExtensionJsRuntime {
                             } }
                           };
                         });
+                      },
+                      fetchText: function(url, init) {
+                        return this.fetchApi(url, init).then(function(response) {
+                          return response.ok ? response.text() : '';
+                        }).catch(function() { return ''; });
                       }
                     };
                     if (name === 'cheerio') {
