@@ -365,7 +365,10 @@ object ExtensionJsRuntime {
                         if (chunk != null) this.source += String(chunk);
                         var events = JSON.parse(__qnHtmlEvents(this.source));
                         for (var i=0;i<events.length;i++) {
-                          var event = events[i], handler = this.handlers[event.type];
+                          var event = events[i];
+                          var handlerName = event.type === 'open' ? 'onopentag' :
+                            event.type === 'text' ? 'ontext' : 'onclosetag';
+                          var handler = this.handlers[handlerName];
                           if (typeof handler !== 'function') continue;
                           if (event.type === 'open') handler.call(this.handlers,event.name,event.attribs);
                           else if (event.type === 'text') handler.call(this.handlers,event.text);
