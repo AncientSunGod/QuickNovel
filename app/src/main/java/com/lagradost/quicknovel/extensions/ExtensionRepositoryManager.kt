@@ -144,11 +144,12 @@ object ExtensionRepositoryManager {
                     val id = item.optString("id").trim()
                     val name = item.optString("name").trim()
                     val url = item.optString("url").trim()
+                    val site = validOptionalHttpUrl(item.optString("site").trim()) ?: continue
                     if (!isValidExtensionId(id) || name.isBlank() || !isValidBundleUrl(url)) continue
                     listings += ExtensionListing(
                         id = id,
                         name = name,
-                        site = item.optString("site").trim(),
+                        site = site,
                         version = item.optString("version").trim(),
                         language = item.optString("lang", item.optString("language", "unknown")).trim(),
                         url = url,
