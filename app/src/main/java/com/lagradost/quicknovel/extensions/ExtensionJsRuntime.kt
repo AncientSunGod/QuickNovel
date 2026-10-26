@@ -376,13 +376,14 @@ object ExtensionJsRuntime {
                         function valid() { return !isNaN(date.getTime()); }
                         function pad(value) { return value < 10 ? '0' + value : String(value); }
                         function unitName(unit) {
-                          unit = String(unit || 'millisecond').toLowerCase();
+                          var original = String(unit || 'millisecond');
+                          if (original === 'M' || original.toLowerCase().indexOf('month') === 0) return 'month';
+                          unit = original.toLowerCase();
                           if (unit === 'd' || unit.indexOf('day') === 0) return 'day';
                           if (unit === 'h' || unit.indexOf('hour') === 0) return 'hour';
                           if (unit === 'm' || unit.indexOf('minute') === 0) return 'minute';
                           if (unit === 's' || unit.indexOf('second') === 0) return 'second';
                           if (unit === 'w' || unit.indexOf('week') === 0) return 'week';
-                          if (unit === 'M' || unit.indexOf('month') === 0) return 'month';
                           if (unit === 'y' || unit.indexOf('year') === 0) return 'year';
                           return 'millisecond';
                         }
