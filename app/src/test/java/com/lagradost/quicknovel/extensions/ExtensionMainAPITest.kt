@@ -30,11 +30,11 @@ class ExtensionMainAPITest {
                         if (args.optBoolean(1)) {
                             org.json.JSONObject.quote("https://chikari.moe/novels/$path")
                         } else {
-                            JSONObjectQuote.quote("https://chikari.moe/$path")
+                            org.json.JSONObject.quote("https://chikari.moe/$path")
                         }
                     }
                     "parseNovel" -> """{"name":"Sample Novel","path":"sample-novel","chapters":[{"name":"Chapter One","path":"api/novels/sample-novel/chapters/1/read"}]}"""
-                    "parseChapter" -> JSONObjectQuote.quote("<p>Chapter text</p>")
+                    "parseChapter" -> org.json.JSONObject.quote("<p>Chapter text</p>")
                     else -> null
                 }
             }
