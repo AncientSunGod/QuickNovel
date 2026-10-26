@@ -485,6 +485,10 @@ object ExtensionJsRuntime {
                             var copy = new Date(date.getTime()), u = unitName(unit);
                             if (u === 'year') { copy.setMonth(0); copy.setDate(1); copy.setHours(0,0,0,0); }
                             else if (u === 'month') { copy.setDate(1); copy.setHours(0,0,0,0); }
+                            else if (u === 'week') {
+                              copy.setDate(copy.getDate()-copy.getDay());
+                              copy.setHours(0,0,0,0);
+                            }
                             else if (u === 'day') copy.setHours(0,0,0,0);
                             else if (u === 'hour') copy.setMinutes(0,0,0);
                             else if (u === 'minute') copy.setSeconds(0,0);
@@ -496,7 +500,16 @@ object ExtensionJsRuntime {
                             return makeDate(new Date(next.valueOf()-1));
                           },
                           diff: function(other, unit) {
-                            var delta = date.getTime() - parseDate(other).getTime(), u = unitName(unit);
+                            var otherDate = parseDate(other), delta = date.getTime() - otherDate.getTime(), u = unitName(unit);
+                            if (u === 'month' || u === 'year') {
+                              var months = (date.getFullYear()-otherDate.getFullYear())*12 +
+                                (date.getMonth()-otherDate.getMonth());
+                              var candidate = new Date(otherDate.getTime());
+                              candidate.setMonth(candidate.getMonth()+months);
+                              if (delta >= 0 && candidate.getTime() > date.getTime()) months--;
+                              else if (delta < 0 && candidate.getTime() < date.getTime()) months++;
+                              return Math.trunc(u === 'year' ? months/12 : months);
+                            }
                             var divisor = u === 'week' ? 604800000 : u === 'day' ? 86400000 : u === 'hour' ? 3600000 : u === 'minute' ? 60000 : u === 'second' ? 1000 : 1;
                             return Math.trunc(delta/divisor);
                           },
