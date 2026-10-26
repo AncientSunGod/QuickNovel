@@ -5,10 +5,9 @@ import java.io.File
 /**
  * Validates the downloaded package without executing third-party JavaScript.
  *
- * The current QuickJS Java binding does not expose a hard execution deadline through
- * the API used here. Executing an untrusted bundle without an enforceable deadline
- * could hang the process, so this class deliberately performs static package checks
- * only. A bounded JS engine/worker must be implemented before runtime activation.
+ * This class deliberately performs static package checks only; it does not validate
+ * JavaScript syntax or compatibility. The restricted ExtensionJsRuntime handles a
+ * narrow subset of LNReader bundles separately and is not a process-isolated sandbox.
  */
 object ExtensionRuntime {
     data class BundleCheck(
@@ -43,7 +42,7 @@ object ExtensionRuntime {
             version = extension.version,
             bytes = size,
             syntaxValid = null,
-            message = "Package checks passed. JavaScript was not executed; a time-limited runtime and the QuickNovel provider adapter are still required.",
+            message = "Package checks passed. This check does not validate JavaScript syntax or LNReader module compatibility.",
         )
     }
 }
