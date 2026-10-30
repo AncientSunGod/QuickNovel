@@ -355,4 +355,20 @@ class ExtensionJsRuntimeTest {
         }
     }
 
+
+    @Test
+    fun clampsDayjsMonthAndYearArithmeticAtMonthBoundaries() {
+        val (extension, file) = extension(
+            "var dayjs = require('dayjs'); " +
+                "module.exports = { searchNovels: function() { " +
+                "return [{name:dayjs('2024-01-31T12:00:00').add(1,'month').format('YYYY-MM-DD'), " +
+                "path:dayjs('2024-02-29T12:00:00').add(1,'year').format('YYYY-MM-DD')}]; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("""[{"name":"2024-02-29","path":"2025-02-28"}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
 }
