@@ -470,8 +470,16 @@ object ExtensionJsRuntime {
                           },
                           add: function(amount, unit) {
                             var copy = new Date(date.getTime()), n = Number(amount), u = unitName(unit);
-                            if (u === 'year') copy.setFullYear(copy.getFullYear()+n);
-                            else if (u === 'month') copy.setMonth(copy.getMonth()+n);
+                            if (u === 'year' || u === 'month') {
+                              // Day.js clamps calendar arithmetic to the last valid day
+                              // (e.g. Jan 31 + 1 month becomes Feb 28/29, not March).
+                              var monthsToAdd = Math.round(u === 'year' ? n * 12 : n);
+                              var originalDay = copy.getDate();
+                              copy.setDate(1);
+                              copy.setMonth(copy.getMonth()+monthsToAdd);
+                              var lastDay = new Date(copy.getFullYear(), copy.getMonth()+1, 0).getDate();
+                              copy.setDate(Math.min(originalDay,lastDay));
+                            }
                             else if (u === 'week') copy.setDate(copy.getDate()+n*7);
                             else if (u === 'day') copy.setDate(copy.getDate()+n);
                             else if (u === 'hour') copy.setHours(copy.getHours()+n);
