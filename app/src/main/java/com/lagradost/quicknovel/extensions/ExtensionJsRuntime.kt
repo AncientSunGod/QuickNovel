@@ -513,7 +513,11 @@ object ExtensionJsRuntime {
                               var months = (date.getFullYear()-otherDate.getFullYear())*12 +
                                 (date.getMonth()-otherDate.getMonth());
                               var candidate = new Date(otherDate.getTime());
+                              var originalDay = candidate.getDate();
+                              candidate.setDate(1);
                               candidate.setMonth(candidate.getMonth()+months);
+                              var lastDay = new Date(candidate.getFullYear(), candidate.getMonth()+1, 0).getDate();
+                              candidate.setDate(Math.min(originalDay,lastDay));
                               if (delta >= 0 && candidate.getTime() > date.getTime()) months--;
                               else if (delta < 0 && candidate.getTime() < date.getTime()) months++;
                               return Math.trunc(u === 'year' ? months/12 : months);
