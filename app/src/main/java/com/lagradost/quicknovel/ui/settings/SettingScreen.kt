@@ -256,7 +256,7 @@ object SettingScreen : SearchableSettings {
 
                             TextPreferenceWidget(
                                 title = "Extension repositories",
-                                subtitle = "Add repositories and browse their extension manifests",
+                                subtitle = "Add repositories and browse their extension manifests. Install only extensions from sources you trust.",
                                 icon = painterResource(R.drawable.extension_24px),
                                 onPreferenceClick = {
                                     extensionRepositories = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getRepositories(context)
@@ -274,6 +274,7 @@ object SettingScreen : SearchableSettings {
                                         ) {
                                             item {
                                                 Text("Add an LNReader-compatible manifest URL ending in plugins.min.json.")
+                                                Text("Security: extension JavaScript runs inside the app process. Install only extensions from repositories and authors you trust; this is not an isolated sandbox.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                                                 OutlinedTextField(
                                                     value = repositoryUrlInput,
                                                     onValueChange = { repositoryUrlInput = it },
