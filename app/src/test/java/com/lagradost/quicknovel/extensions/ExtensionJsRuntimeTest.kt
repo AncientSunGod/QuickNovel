@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.nio.charset.Charset
 
 class ExtensionJsRuntimeTest {
     private fun extension(source: String): Pair<InstalledExtension, File> {
@@ -163,6 +164,19 @@ class ExtensionJsRuntimeTest {
         } finally {
             file.delete()
         }
+    }
+
+    @Test
+    fun decodesNonUtf8FetchTextUsingRequestedOrResponseCharset() {
+        val gbk = Charset.forName("GBK")
+        val source = "章节内容"
+        val bytes = source.toByteArray(gbk)
+
+        assertEquals(source, ExtensionHttpClient.decodeText(bytes, "GBK"))
+        assertEquals(
+            source,
+            ExtensionHttpClient.decodeText(bytes, contentType = "text/html; charset=gbk"),
+        )
     }
 
     @Test
