@@ -585,6 +585,47 @@ class ExtensionJsRuntimeTest {
 
 
     @Test
+    fun executesRealFirstKissNovelBundleWithMockedSiteResponse() {
+        val source = javaClass.getResourceAsStream("/lnreader/firstkissnovel.js")!!
+            .bufferedReader()
+            .use { it.readText() }
+        val (extension, file) = extension(source)
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension = extension.copy(site = "https://1stkissnovel.org"),
+                operation = "searchNovels",
+                argumentsJson = """["sample",1]""",
+                testFetchOverride = { url ->
+                    assertEquals(
+                        "https://1stkissnovel.org/page/1/?s=sample&post_type=wp-manga",
+                        url,
+                    )
+                    ExtensionHttpClient.TextResponse(
+                        url = url,
+                        statusCode = 200,
+                        contentType = "text/html; charset=utf-8",
+                        body = """
+                            <html><head><title>FirstKissNovel</title></head><body>
+                              <div class="page-item-detail">
+                                <div class="post-title"><a href="https://1stkissnovel.org/novel/sample/">Sample Novel</a></div>
+                                <img src="https://1stkissnovel.org/cover.jpg">
+                              </div>
+                            </body></html>
+                        """.trimIndent(),
+                    )
+                },
+            ).getOrThrow()
+            val items = org.json.JSONArray(result.json)
+            assertEquals(1, items.length())
+            assertEquals("Sample Novel", items.getJSONObject(0).getString("name"))
+            assertEquals("novel/sample/", items.getJSONObject(0).getString("path"))
+            assertEquals("https://1stkissnovel.org/cover.jpg", items.getJSONObject(0).getString("cover"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun exposesCurrentChikariFilterDefinitionsToTheAdapter() {
         val source = javaClass.getResourceAsStream("/lnreader/chikari.js")!!
             .bufferedReader()
