@@ -111,7 +111,15 @@ class ExtensionMainAPI internal constructor(
         var previousPageKey: List<String>? = null
 
         for (page in 1..MAX_SEARCH_PAGES) {
-            val json = executeRequired("searchNovels", JSONArray().put(query).put(page))
+            // Some providers expose only one page, or throw when the requested page is
+            // beyond their final page. Keep valid earlier results in that case, but surface
+            // a failure on the first page so the UI can explain the provider problem.
+            val json = try {
+                executeRequired("searchNovels", JSONArray().put(query).put(page))
+            } catch (error: Exception) {
+                if (receivedAnyPage) break
+                throw error
+            }
             receivedAnyPage = true
             val results = mapSearchItems(json)
             val pageKey = results.map { it.url }
