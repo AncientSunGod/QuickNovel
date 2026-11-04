@@ -993,10 +993,7 @@ class ReadActivityViewModel : ViewModel() {
     fun saveTextReplacements(rules: List<TextReplacementRule>) {
         val cleaned = rules.filter { it.find.isNotBlank() }
         setKey(TEXT_REPLACEMENTS_KEY, cleaned)
-        val index = currentIndex
-        viewModelScope.launch {
-            loadChapter(index, reload = true, reTranslate = false, notify = true)
-        }
+        reloadChapter(currentIndex)
     }
 
     private fun applyTextReplacements(
@@ -1007,7 +1004,7 @@ class ReadActivityViewModel : ViewModel() {
             val builder = SpannableStringBuilder()
             input.forEach { span ->
                 builder.append(span.text)
-                builder.append('\\n')
+                builder.append('\n')
             }
             return builder to input
         }
@@ -1033,7 +1030,7 @@ class ReadActivityViewModel : ViewModel() {
             val start = builder.length
             builder.append(text)
             val end = builder.length
-            builder.append('\\n')
+            builder.append('\n')
             output.add(TextSpan(text, start, end, original.index, original.innerIndex))
         }
         return builder to output
