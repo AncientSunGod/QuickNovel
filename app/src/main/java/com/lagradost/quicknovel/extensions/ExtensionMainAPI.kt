@@ -29,8 +29,9 @@ class ExtensionMainAPI internal constructor(
     private val testFetchOverride: ((String) -> ExtensionHttpClient.TextResponse)? = null,
     private val testRequestOverride: ((String, String, Map<String, String>, String?) -> ExtensionHttpClient.TextResponse)? = null,
     private val operationOverride: ((String, JSONArray) -> String?)? = null,
+    providerName: String = extension.name,
 ) : MainAPI() {
-    override val name: String = extension.name
+    override val name: String = providerName
     override val mainUrl: String = extension.site.trimEnd('/')
     override val lang: String = normalizeLanguage(extension.language)
     private val imageRequestHeaders: Map<String, String>? by lazy {
