@@ -136,6 +136,10 @@ object ExtensionJsRuntime {
                     }
                     val responseEncoding = args.getOrNull(2)?.toString()
                         ?.takeIf { it.isNotBlank() && it != "undefined" && it != "null" }
+                    val binaryBase64 = args.getOrNull(3)?.toString() == "base64"
+                    require(!binaryBase64 || method == "GET") {
+                        "Binary fetchFile currently supports GET requests only."
+                    }
                     require(method != "GET" || requestBody == null) {
                         "GET requests may not include a request body."
                     }
@@ -152,14 +156,21 @@ object ExtensionJsRuntime {
                         allowedHosts = setOf(approvedHost),
                         responseEncoding = responseEncoding,
                     ).getOrThrow()
-                    return JSONObject()
+                    val responseJson = JSONObject()
                         .put("url", response.url)
                         .put("statusCode", response.statusCode)
                         .put("statusText", response.statusText.ifBlank { response.statusCode.toString() })
                         .put("contentType", response.contentType)
                         .put("headers", JSONObject(response.headers))
-                        .put("body", response.body)
-                        .toString()
+                    if (binaryBase64) {
+                        require(response.bodyBytes.size <= 1024 * 1024) {
+                            "Extension fetchFile response exceeds the 1 MB binary limit."
+                        }
+                        responseJson.put("bodyBase64", encodeBase64(response.bodyBytes))
+                    } else {
+                        responseJson.put("body", response.body)
+                    }
+                    return responseJson.toString()
                 }
             }
             fetchFunction.parentScope = scope
@@ -406,6 +417,30 @@ object ExtensionJsRuntime {
                         } catch (error) {
                           return Promise.resolve('');
                         }
+                      },
+                      fetchFile: function(url, init) {
+                        try {
+                          var method = init && init.method ? String(init.method).toUpperCase() : 'GET';
+                          if (method !== 'GET') throw new Error('fetchFile currently supports GET requests only.');
+                          var headers = init && init.headers ? init.headers : {};
+                          if (headers && typeof headers.forEach === 'function') {
+                            var normalized = {};
+                            headers.forEach(function(value, key) { normalized[key] = value; });
+                            headers = normalized;
+                          }
+                          var request = {method:method,headers:headers};
+                          return Promise.resolve(JSON.parse(
+                            __qnFetch(String(url), JSON.stringify(request), null, 'base64')
+                          )).then(function(response) {
+                            return response.statusCode >= 200 && response.statusCode < 300
+                              ? (response.bodyBase64 || '') : '';
+                          }).catch(function() { return ''; });
+                        } catch (error) {
+                          return Promise.resolve('');
+                        }
+                      },
+                      fetchProto: function() {
+                        throw new Error('LNReader fetchProto requires protobufjs and binary POST support, which are not supported by this QuickNovel runtime yet.');
                       }
                     };
                     fetchModule.default = fetchModule;
@@ -840,6 +875,25 @@ object ExtensionJsRuntime {
         val parsedResult = org.json.JSONTokener(output).nextValue()
         require(parsedResult != null) { "Extension returned invalid JSON." }
         ExecutionResult(output)
+    }
+
+    private fun encodeBase64(bytes: ByteArray): String {
+        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        val output = StringBuilder(((bytes.size + 2) / 3) * 4)
+        var index = 0
+        while (index < bytes.size) {
+            val first = bytes[index].toInt() and 0xff
+            val hasSecond = index + 1 < bytes.size
+            val hasThird = index + 2 < bytes.size
+            val second = if (hasSecond) bytes[index + 1].toInt() and 0xff else 0
+            val third = if (hasThird) bytes[index + 2].toInt() and 0xff else 0
+            output.append(alphabet[first ushr 2])
+            output.append(alphabet[((first and 0x03) shl 4) or (second ushr 4)])
+            output.append(if (hasSecond) alphabet[((second and 0x0f) shl 2) or (third ushr 6)] else '=')
+            output.append(if (hasThird) alphabet[third and 0x3f] else '=')
+            index += 3
+        }
+        return output.toString()
     }
 
     /**
