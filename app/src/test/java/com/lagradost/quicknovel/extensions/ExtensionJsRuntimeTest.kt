@@ -498,6 +498,27 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun exposesLnReaderImageRequestInitHeaders() {
+        val (extension, file) = extension(
+            "module.exports = { " +
+                "imageRequestInit:{headers:{referrer:'https://example.com','User-Agent':'QuickNovel test'}}, " +
+                "searchNovels:function(){return [];} };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension = extension,
+                operation = "getImageRequestInit",
+                argumentsJson = "[]",
+            ).getOrThrow()
+            val headers = org.json.JSONObject(result.json).getJSONObject("headers")
+            assertEquals("https://example.com", headers.getString("referrer"))
+            assertEquals("QuickNovel test", headers.getString("User-Agent"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun approvesAdditionalPublicHostsDeclaredInAnExtensionBundle() {
         val hosts = ExtensionJsRuntime.approvedHostsForBundle(
             "https://genesistudio.com",
