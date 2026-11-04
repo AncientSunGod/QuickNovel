@@ -31,7 +31,7 @@ An upstream Chikari bundle is included as an MIT-licensed fixture. Tests use moc
 ## Supported runtime subset
 
 - **Module helpers:** `@libs/defaultCover`, `@libs/novelStatus`, `@libs/filterInputs`, and `@libs/storage`.
-- **HTTP:** `fetchApi` supports GET and POST with string request bodies. `fetchText` supports the same request options plus a requested text encoding. Response status, status text, and headers are exposed.
+- **HTTP:** `fetchApi` supports GET and POST with string request bodies. `fetchText` supports the same request options plus a requested text encoding. `fetchFile` supports bounded GET downloads and returns base64 data (up to 1 MB). Response status, status text, and headers are exposed.
 - **Storage:** `@libs/storage` key/value data and `localStorage` persist per extension. `sessionStorage` is held in memory for the current app process and is cleared on uninstall/process exit.
 - **Plugin settings:** Text, Switch, Select, and CheckboxGroup settings can be read, edited, validated, and saved in the extension settings UI.
 - **Plugin filters:** Picker filters map to QuickNovel's existing home-page controls. One Checkbox/XCheckbox genre filter can be mapped to the tag selector; complex multi-select and exclusion editing is not fully represented.
@@ -45,7 +45,7 @@ Networking has request-count, timeout, response-size, redirect, and approved-hos
 
 The following are not implemented as full LNReader equivalents:
 
-- `fetchProto`, `fetchFile`, protobuf encoding/decoding, AES helpers, and general `@libs/utils` modules.
+- `fetchProto`, protobuf encoding/decoding, AES helpers, and general `@libs/utils` modules.
 - Binary, multipart, and arbitrary request bodies; unrestricted Fetch API behavior; browser APIs such as a full `window`/DOM environment.
 - Full Cheerio/htmlparser2 behavior, all Day.js plugins, and true asynchronous event-loop/microtask scheduling.
 - Search pagination beyond the first `searchNovels` page.
