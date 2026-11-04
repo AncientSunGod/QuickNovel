@@ -238,7 +238,10 @@ object ExtensionJsRuntime {
                     }
                     // localStorage and the @libs/storage helper persist across app restarts.
                     // sessionStorage is isolated per extension and kept only in this process.
-                    val sessionValues = if (area == "session") {
+                    // Unit tests and non-Android callers may omit a Context. Keep their
+                    // storage in the same per-extension in-memory area rather than failing
+                    // during module initialization; production providers pass app context.
+                    val sessionValues = if (area == "session" || storageContext == null) {
                         sessionStorage.computeIfAbsent(extension.id) { ConcurrentHashMap() }
                     } else null
                     val prefs = if (sessionValues == null) {
