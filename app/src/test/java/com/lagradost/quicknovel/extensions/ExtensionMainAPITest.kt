@@ -450,7 +450,7 @@ class ExtensionMainAPITest {
                     repositoryUrl = "https://example.com/plugins.min.json",
                     bundlePath = bundle.absolutePath,
                 )
-                assertEquals(expected, ExtensionMainAPI(extension).lang)
+                assertEquals("Manifest language: $manifestLanguage", expected, ExtensionMainAPI(extension).lang)
             }
         } finally {
             bundle.delete()
