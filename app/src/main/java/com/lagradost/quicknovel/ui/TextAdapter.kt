@@ -184,9 +184,13 @@ data class TextConfig(
     val isTextSelectable: Boolean,
     /** Vertical text padding in dp */
     val verticalPadding: Float,
+    val customFontsDirectory: File? = null,
 ) {
     private val fontFile: File? by lazy {
-        if (textFont == "") null else systemFonts.firstOrNull { it.name == textFont }
+        if (textFont == "") null else {
+            systemFonts.firstOrNull { it.name == textFont }
+                ?: customFontsDirectory?.listFiles()?.firstOrNull { it.isFile && it.name == textFont }
+        }
     }
 
     private val cachedFont: Typeface by lazy {
