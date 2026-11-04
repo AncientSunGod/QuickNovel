@@ -112,17 +112,20 @@ class ExtensionMainAPITest {
             val api = ExtensionMainAPI(extension) { operation, args ->
                 when (operation) {
                     "getPluginFilters" -> """{
-                        "sort":{"label":"Sort by","type":"Picker","value":"popular","options":[
-                            {"label":"Popular","value":"popular"},
-                            {"label":"Latest","value":"latest"}
-                        ]},
-                        "language":{"label":"Language","type":"Picker","value":"en","options":[
-                            {"label":"English","value":"en"},
-                            {"label":"Japanese","value":"ja"}
-                        ]},
-                        "genres":{"label":"Genres","type":"XCheckbox","value":{"include":[],"exclude":["horror"]},"options":[
-                            {"label":"Fantasy","value":"fantasy"}
-                        ]}
+                        "order":["sort","language","genres"],
+                        "filters":{
+                            "sort":{"label":"Sort by","type":"Picker","value":"popular","options":[
+                                {"label":"Popular","value":"popular"},
+                                {"label":"Latest","value":"latest"}
+                            ]},
+                            "language":{"label":"Language","type":"Picker","value":"en","options":[
+                                {"label":"English","value":"en"},
+                                {"label":"Japanese","value":"ja"}
+                            ]},
+                            "genres":{"label":"Genres","type":"XCheckbox","value":{"include":[],"exclude":["horror"]},"options":[
+                                {"label":"Fantasy","value":"fantasy"}
+                            ]}
+                        }
                     }"""
                     "popularNovels" -> {
                         capturedOptions = args.getJSONObject(1)
