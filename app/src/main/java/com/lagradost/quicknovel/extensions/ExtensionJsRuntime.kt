@@ -41,6 +41,7 @@ object ExtensionJsRuntime {
         "getPluginSettings",
         "setPluginSetting",
         "getPluginFilters",
+        "transformChapterHtml",
     )
 
     data class ExecutionResult(val json: String)
@@ -52,8 +53,15 @@ object ExtensionJsRuntime {
         testFetchOverride: ((String) -> ExtensionHttpClient.TextResponse)? = null,
         storageContext: AndroidContext? = null,
         testRequestOverride: ((String, String, Map<String, String>, String?) -> ExtensionHttpClient.TextResponse)? = null,
+        customScript: String? = null,
     ): Result<ExecutionResult> = runCatching {
         require(operation in allowedOperations) { "Unsupported extension operation." }
+        if (operation == "transformChapterHtml") {
+            require(customScript != null) { "Custom JavaScript content is missing." }
+            require(customScript.toByteArray(Charsets.UTF_8).size <= 512 * 1024) {
+                "Custom JavaScript exceeds the 512 KB limit."
+            }
+        }
         require(argumentsJson.toByteArray(Charsets.UTF_8).size <= MAX_ARGUMENT_BYTES) {
             "Extension arguments exceed the size limit."
         }
@@ -674,7 +682,26 @@ object ExtensionJsRuntime {
             cx.evaluateString(scope, source, "extension-${extension.id}.js", 1, null)
             ScriptableObject.putProperty(scope, "__qnOperation", operation)
             ScriptableObject.putProperty(scope, "__qnArgumentsJson", arguments.toString())
-            val invocation = """
+            val output = if (operation == "transformChapterHtml") {
+                val html = arguments.optString(0)
+                require(html.toByteArray(Charsets.UTF_8).size <= MAX_RESULT_BYTES) {
+                    "Custom JavaScript input HTML exceeds the 2 MB limit."
+                }
+                ScriptableObject.putProperty(scope, "__qnTransformHtml", html)
+                cx.evaluateString(
+                    scope,
+                    "var $ = require('cheerio').load(__qnTransformHtml); var loadedCheerio = $;",
+                    "extension-custom-dom.js",
+                    1,
+                    null,
+                )
+                if (!customScript.isNullOrBlank()) {
+                    cx.evaluateString(scope, customScript, "extension-custom.js", 1, null)
+                }
+                val transformed = cx.evaluateString(scope, "$.html()", "extension-custom-result.js", 1, null)
+                JSONObject.quote(Context.toString(transformed))
+            } else {
+                val invocation = """
                 (function() {
                   var exported = module.exports;
                   var plugin = exported && (exported.default || exported);
@@ -761,6 +788,8 @@ object ExtensionJsRuntime {
             """.trimIndent()
             val result = cx.evaluateString(scope, invocation, "extension-call.js", 1, null)
             Context.toString(result)
+            }
+            output
         }
         require(output.toByteArray(Charsets.UTF_8).size <= MAX_RESULT_BYTES) {
             "Extension result exceeds the 2 MB limit."
