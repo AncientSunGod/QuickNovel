@@ -76,7 +76,7 @@ class ExtensionMainAPITest {
                             {"label":"English","value":"en"},
                             {"label":"Japanese","value":"ja"}
                         ]},
-                        "genres":{"label":"Genres","type":"Checkbox","value":[],"options":[
+                        "genres":{"label":"Genres","type":"XCheckbox","value":{"include":[],"exclude":["horror"]},"options":[
                             {"label":"Fantasy","value":"fantasy"}
                         ]}
                     }"""
@@ -96,14 +96,20 @@ class ExtensionMainAPITest {
                 listOf("English" to "en", "Japanese" to "ja"),
                 api.mainCategories,
             )
+            assertEquals(
+                listOf("All Genres" to "", "Fantasy" to "fantasy"),
+                api.tags,
+            )
 
             kotlinx.coroutines.runBlocking {
-                api.loadMainPage(1, "ja", "latest", null)
+                api.loadMainPage(1, "ja", "latest", "fantasy")
             }
             val filters = capturedOptions!!.getJSONObject("filters")
             assertEquals("latest", filters.getJSONObject("sort").getString("value"))
             assertEquals("ja", filters.getJSONObject("language").getString("value"))
-            assertEquals(0, filters.getJSONObject("genres").getJSONArray("value").length())
+            val genreValue = filters.getJSONObject("genres").getJSONObject("value")
+            assertEquals("fantasy", genreValue.getJSONArray("include").getString(0))
+            assertEquals("horror", genreValue.getJSONArray("exclude").getString(0))
         } finally {
             bundle.delete()
         }
