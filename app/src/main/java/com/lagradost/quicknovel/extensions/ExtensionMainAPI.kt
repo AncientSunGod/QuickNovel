@@ -31,26 +31,39 @@ class ExtensionMainAPI internal constructor(
     override val name: String = extension.name
     override val mainUrl: String = extension.site.trimEnd('/')
     override val lang: String = normalizeLanguage(extension.language)
-    private val pluginFilters: JSONObject by lazy {
+    private val pluginFilterResponse: JSONObject by lazy {
         execute("getPluginFilters", JSONArray())?.let { runCatching { JSONObject(it) }.getOrNull() }
             ?: JSONObject()
     }
-    private val pickerFilters: List<Pair<String, JSONObject>> by lazy {
-        buildList {
-            val keys = pluginFilters.keys()
-            while (keys.hasNext()) {
-                val key = keys.next()
-                val definition = pluginFilters.optJSONObject(key) ?: continue
-                if (definition.optString("type") == "Picker") add(key to definition)
+    private val pluginFilters: JSONObject by lazy {
+        pluginFilterResponse.optJSONObject("filters") ?: pluginFilterResponse
+    }
+    private val pluginFilterOrder: List<String> by lazy {
+        val declaredOrder = pluginFilterResponse.optJSONArray("order")
+        if (declaredOrder != null) {
+            buildList {
+                for (index in 0 until declaredOrder.length()) {
+                    val key = declaredOrder.optString(index).take(500)
+                    if (key.isNotBlank()) add(key)
+                }
             }
+        } else {
+            buildList {
+                val keys = pluginFilters.keys()
+                while (keys.hasNext()) add(keys.next())
+            }.sorted()
+        }
+    }
+    private val pickerFilters: List<Pair<String, JSONObject>> by lazy {
+        pluginFilterOrder.mapNotNull { key ->
+            val definition = pluginFilters.optJSONObject(key) ?: return@mapNotNull null
+            if (definition.optString("type") == "Picker") key to definition else null
         }
     }
     private val genreFilter: Pair<String, JSONObject>? by lazy {
         if (pickerFilters.size > 2) return@lazy null
-        val keys = pluginFilters.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            val definition = pluginFilters.optJSONObject(key) ?: continue
+        pluginFilterOrder.forEach { key ->
+            val definition = pluginFilters.optJSONObject(key) ?: return@forEach
             if (definition.optString("type") == "Checkbox" ||
                 definition.optString("type") == "XCheckbox"
             ) return@lazy key to definition
