@@ -709,7 +709,11 @@ object ExtensionJsRuntime {
                   var args = JSON.parse(__qnArgumentsJson);
 
                   if (__qnOperation === 'getPluginFilters') {
-                    return JSON.stringify(plugin.filters || {});
+                    var filterDefinitions = plugin.filters || {};
+                    return JSON.stringify({
+                      filters: filterDefinitions,
+                      order: Object.keys(filterDefinitions)
+                    });
                   }
 
                   if (__qnOperation === 'getPluginSettings') {
