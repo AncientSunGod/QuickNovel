@@ -425,6 +425,39 @@ class ExtensionMainAPITest {
     }
 
     @Test
+    fun mapsNativeScriptLnReaderManifestLanguagesToQuickNovelLanguageCodes() {
+        val bundle = File.createTempFile("quicknovel-language-test-", ".js")
+        bundle.writeText("module.exports = {};")
+        try {
+            val cases = mapOf(
+                "English" to "en",
+                "বাংলা" to "bn",
+                "\u200eالعربية" to "ar",
+                "中文, 汉语, 漢語" to "zh",
+                "日本語" to "ja",
+                "한국어" to "ko",
+                "Русский" to "ru",
+                "ไทย" to "th",
+            )
+            cases.forEach { (manifestLanguage, expected) ->
+                val extension = InstalledExtension(
+                    id = "language-test",
+                    name = "Language test",
+                    site = "https://example.com",
+                    version = "1",
+                    language = manifestLanguage,
+                    url = "https://example.com/plugin.js",
+                    repositoryUrl = "https://example.com/plugins.min.json",
+                    bundlePath = bundle.absolutePath,
+                )
+                assertEquals(manifestLanguage, expected, ExtensionMainAPI(extension).lang)
+            }
+        } finally {
+            bundle.delete()
+        }
+    }
+
+    @Test
     fun searchStopsWhenAnExtensionIgnoresPageArgument() {
         val bundle = File.createTempFile("quicknovel-search-repeat-", ".js")
         bundle.writeText("module.exports = {};")
