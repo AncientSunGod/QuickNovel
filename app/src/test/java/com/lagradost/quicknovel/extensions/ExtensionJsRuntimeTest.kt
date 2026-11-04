@@ -448,7 +448,12 @@ class ExtensionJsRuntimeTest {
                 operation = "getPluginFilters",
                 argumentsJson = "[]",
             ).getOrThrow()
-            val filters = org.json.JSONObject(result.json)
+            val payload = org.json.JSONObject(result.json)
+            assertEquals(
+                listOf("sort", "genres"),
+                (0 until payload.getJSONArray("order").length()).map { payload.getJSONArray("order").getString(it) },
+            )
+            val filters = payload.getJSONObject("filters")
             assertEquals("Picker", filters.getJSONObject("sort").getString("type"))
             assertEquals("popular", filters.getJSONObject("sort").getString("value"))
             assertEquals("XCheckbox", filters.getJSONObject("genres").getString("type"))
