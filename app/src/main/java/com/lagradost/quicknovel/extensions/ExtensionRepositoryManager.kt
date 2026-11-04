@@ -58,6 +58,10 @@ object ExtensionRepositoryManager {
     private const val MAX_MANIFEST_BYTES = 2 * 1024 * 1024
     private val extensionIdPattern = Regex("[A-Za-z0-9._-]{1,120}")
 
+    @Volatile
+    var lastRefreshWarning: String? = null
+        private set
+
     fun getRepositories(context: Context): List<String> =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getStringSet(REPOSITORIES_KEY, emptySet())
@@ -112,58 +116,85 @@ object ExtensionRepositoryManager {
         value != "." && value != ".." && extensionIdPattern.matches(value)
 
     fun refresh(context: Context): Result<List<ExtensionListing>> = runCatching {
+        val repositories = getRepositories(context)
         val listings = mutableListOf<ExtensionListing>()
-        getRepositories(context).forEach { repositoryUrl ->
-            val connection = openValidatedConnection(
-                repositoryUrl, 12_000, 20_000, "application/json"
-            )
-            try {
-                val status = connection.responseCode
-                if (status !in 200..299) {
-                    throw IllegalStateException("Repository returned HTTP $status: $repositoryUrl")
-                }
-                val body = connection.inputStream.use { input ->
-                    val output = ByteArrayOutputStream()
-                    val buffer = ByteArray(8192)
-                    var total = 0
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        total += count
-                        require(total <= MAX_MANIFEST_BYTES) {
-                            "Repository manifest exceeds the 2 MB limit."
-                        }
-                        output.write(buffer, 0, count)
+        val failures = mutableListOf<String>()
+        var successfulRepositories = 0
+
+        repositories.forEach { repositoryUrl ->
+            val repositoryResult = runCatching {
+                val repositoryListings = mutableListOf<ExtensionListing>()
+                val connection = openValidatedConnection(
+                    repositoryUrl, 12_000, 20_000, "application/json"
+                )
+                try {
+                    val status = connection.responseCode
+                    if (status !in 200..299) {
+                        throw IllegalStateException("Repository returned HTTP $status.")
                     }
-                    output.toString(Charsets.UTF_8.name())
+                    val body = connection.inputStream.use { input ->
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        var total = 0
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            require(total <= MAX_MANIFEST_BYTES) {
+                                "Repository manifest exceeds the 2 MB limit."
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                        output.toString(Charsets.UTF_8.name())
+                    }
+                    val array = JSONArray(body)
+                    for (index in 0 until array.length()) {
+                        val item = array.optJSONObject(index) ?: continue
+                        val id = item.optString("id").trim()
+                        val name = item.optString("name").trim()
+                        val url = item.optString("url").trim()
+                        val site = validOptionalHttpUrl(item.optString("site").trim()) ?: continue
+                        if (!isValidExtensionId(id) || name.isBlank() || !isValidBundleUrl(url)) continue
+                        repositoryListings += ExtensionListing(
+                            id = id,
+                            name = name,
+                            site = site,
+                            version = item.optString("version").trim(),
+                            language = item.optString("lang", item.optString("language", "unknown")).trim(),
+                            url = url,
+                            repositoryUrl = repositoryUrl,
+                            iconUrl = item.optString("iconUrl").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                            customJsUrl = item.optString("customJS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                            customCssUrl = item.optString("customCSS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                            hasSettings = item.optBoolean("hasSettings", false),
+                            hasUpdate = item.optBoolean("hasUpdate", false),
+                        )
+                    }
+                } finally {
+                    connection.disconnect()
                 }
-                val array = JSONArray(body)
-                for (index in 0 until array.length()) {
-                    val item = array.optJSONObject(index) ?: continue
-                    val id = item.optString("id").trim()
-                    val name = item.optString("name").trim()
-                    val url = item.optString("url").trim()
-                    val site = validOptionalHttpUrl(item.optString("site").trim()) ?: continue
-                    if (!isValidExtensionId(id) || name.isBlank() || !isValidBundleUrl(url)) continue
-                    listings += ExtensionListing(
-                        id = id,
-                        name = name,
-                        site = site,
-                        version = item.optString("version").trim(),
-                        language = item.optString("lang", item.optString("language", "unknown")).trim(),
-                        url = url,
-                        repositoryUrl = repositoryUrl,
-                        iconUrl = item.optString("iconUrl").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
-                        customJsUrl = item.optString("customJS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
-                        customCssUrl = item.optString("customCSS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
-                        hasSettings = item.optBoolean("hasSettings", false),
-                        hasUpdate = item.optBoolean("hasUpdate", false),
-                    )
-                }
-            } finally {
-                connection.disconnect()
+                repositoryListings
+            }
+
+            repositoryResult.onSuccess { repositoryListings ->
+                successfulRepositories++
+                listings.addAll(repositoryListings)
+            }.onFailure { error ->
+                failures += "${repositoryUrl}: ${error.message ?: "refresh failed"}"
             }
         }
+
+        lastRefreshWarning = failures.takeIf { it.isNotEmpty() }
+            ?.joinToString("; ") { it.take(300) }
+            ?.take(1_000)
+
+        if (repositories.isNotEmpty() && successfulRepositories == 0) {
+            throw IllegalStateException(
+                failures.firstOrNull()?.take(500)
+                    ?: "Could not refresh any extension repository."
+            )
+        }
+
         listings.distinctBy { it.id }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
     }
