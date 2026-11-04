@@ -431,13 +431,22 @@ class ExtensionMainAPITest {
         try {
             val cases = mapOf(
                 "English" to "en",
+                "Multi" to "en",
                 "বাংলা" to "bn",
                 "\u200eالعربية" to "ar",
                 "中文, 汉语, 漢語" to "zh",
                 "日本語" to "ja",
-                "한국어" to "ko",
+                "조선말, 한국어" to "ko",
+                "Français" to "fr",
+                "Bahasa Indonesia" to "id",
+                "Polski" to "pl",
+                "Português" to "pt",
                 "Русский" to "ru",
+                "Español" to "es",
                 "ไทย" to "th",
+                "Türkçe" to "tr",
+                "Українська" to "uk",
+                "Tiếng Việt" to "vi",
             )
             cases.forEach { (manifestLanguage, expected) ->
                 val extension = InstalledExtension(
