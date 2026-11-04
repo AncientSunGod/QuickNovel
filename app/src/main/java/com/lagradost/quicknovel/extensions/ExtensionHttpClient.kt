@@ -23,6 +23,7 @@ object ExtensionHttpClient {
         val body: String,
         val statusText: String = "",
         val headers: Map<String, String> = emptyMap(),
+        val bodyBytes: ByteArray = body.toByteArray(Charsets.UTF_8),
     )
 
     private const val CONNECT_TIMEOUT_MS = 10_000
@@ -167,6 +168,7 @@ object ExtensionHttpClient {
                         body = decodeText(bodyBytes, responseEncoding, connection.contentType),
                         statusText = connection.responseMessage.orEmpty(),
                         headers = responseHeaders,
+                        bodyBytes = bodyBytes,
                     )
                 )
             } finally {
