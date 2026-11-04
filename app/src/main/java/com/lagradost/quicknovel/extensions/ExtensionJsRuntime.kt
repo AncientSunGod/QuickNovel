@@ -30,8 +30,12 @@ import java.util.concurrent.ConcurrentHashMap
 object ExtensionJsRuntime {
     private val sessionStorage = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
 
-    internal fun clearExtensionData(context: AndroidContext, extensionId: String) {
+    internal fun clearSessionStorage(extensionId: String) {
         sessionStorage.remove(extensionId)
+    }
+
+    internal fun clearExtensionData(context: AndroidContext, extensionId: String) {
+        clearSessionStorage(extensionId)
         context.getSharedPreferences(
             "quicknovel_extension_storage_$extensionId",
             AndroidContext.MODE_PRIVATE,
