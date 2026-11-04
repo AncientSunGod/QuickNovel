@@ -234,7 +234,16 @@ object SettingScreen : SearchableSettings {
                             var installedExtensions by remember { mutableStateOf(com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)) }
                             var repositoryStatus by remember { mutableStateOf("Add an LNReader-compatible repository manifest URL.") }
                             var repositoryRefreshing by remember { mutableStateOf(false) }
+                            var extensionSearchQuery by remember { mutableStateOf("") }
                             var pendingExtensionInstall by remember { mutableStateOf<com.lagradost.quicknovel.extensions.ExtensionListing?>(null) }
+                            val filteredExtensionListings = extensionListings.filter { entry ->
+                                val query = extensionSearchQuery.trim()
+                                query.isBlank() ||
+                                    entry.name.contains(query, ignoreCase = true) ||
+                                    entry.site.contains(query, ignoreCase = true) ||
+                                    entry.language.contains(query, ignoreCase = true) ||
+                                    entry.id.contains(query, ignoreCase = true)
+                            }
 
                             fun refreshExtensionCatalog() {
                                 repositoryRefreshing = true
@@ -325,13 +334,31 @@ object SettingScreen : SearchableSettings {
                                                 }
                                             }
                                             item {
-                                                Text("Available extensions (${extensionListings.size})", style = MaterialTheme.typography.titleSmall)
-                                            }
-                                            item {
                                                 Text("Installed bundles (${installedExtensions.size})", style = MaterialTheme.typography.titleSmall)
                                                 Text("Installed extensions are registered as providers, but compatibility is partial. Unsupported imports may cause search or reading to fail.", style = MaterialTheme.typography.bodySmall)
                                             }
-                                            items(extensionListings.take(30)) { entry ->
+                                            items(installedExtensions) { installed ->
+                                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text(installed.name, style = MaterialTheme.typography.bodyMedium)
+                                                    Text("${installed.site} · ${installed.language} · ${installed.version}", style = MaterialTheme.typography.bodySmall)
+                                                    TextButton(onClick = {
+                                                        val removed = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.uninstall(context, installed.id)
+                                                        installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
+                                                        repositoryStatus = if (removed) "${installed.name} uninstalled." else "Could not uninstall ${installed.name}."
+                                                    }) { Text("Uninstall") }
+                                                }
+                                            }
+                                            item {
+                                                Text("Available extensions (${filteredExtensionListings.size} of ${extensionListings.size})", style = MaterialTheme.typography.titleSmall)
+                                                OutlinedTextField(
+                                                    value = extensionSearchQuery,
+                                                    onValueChange = { extensionSearchQuery = it },
+                                                    label = { Text("Search extensions by name, site, ID or language") },
+                                                    singleLine = true,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                            items(filteredExtensionListings) { entry ->
                                                 val installed = installedExtensions.firstOrNull { it.id == entry.id }
                                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                                     Text(entry.name, style = MaterialTheme.typography.bodyMedium)
@@ -342,18 +369,13 @@ object SettingScreen : SearchableSettings {
                                                             enabled = !repositoryRefreshing
                                                         ) { Text(if (installed == null) "Install" else "Update") }
                                                         if (installed != null) {
-                                                            TextButton(onClick = {
-                                                                val removed = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.uninstall(context, entry.id)
-                                                                installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
-                                                                repositoryStatus = if (removed) "${entry.name} uninstalled." else "Could not uninstall ${entry.name}."
-                                                            }) { Text("Uninstall") }
                                                             Text("Installed", style = MaterialTheme.typography.bodySmall)
                                                         }
                                                     }
                                                 }
                                             }
-                                            if (extensionListings.size > 30) {
-                                                item { Text("Showing first 30 entries.", style = MaterialTheme.typography.bodySmall) }
+                                            if (filteredExtensionListings.isEmpty() && extensionListings.isNotEmpty()) {
+                                                item { Text("No extensions match this search.", style = MaterialTheme.typography.bodySmall) }
                                             }
                                         }
                                     },
