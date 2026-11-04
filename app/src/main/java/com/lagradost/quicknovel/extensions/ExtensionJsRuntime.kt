@@ -30,8 +30,12 @@ import java.util.concurrent.ConcurrentHashMap
 object ExtensionJsRuntime {
     private val sessionStorage = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
 
-    internal fun clearSessionStorage(extensionId: String) {
+    internal fun clearExtensionData(context: AndroidContext, extensionId: String) {
         sessionStorage.remove(extensionId)
+        context.getSharedPreferences(
+            "quicknovel_extension_storage_$extensionId",
+            AndroidContext.MODE_PRIVATE,
+        ).edit().clear().apply()
     }
 
     private const val MAX_SOURCE_BYTES = 8 * 1024 * 1024
