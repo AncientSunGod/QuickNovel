@@ -8,6 +8,45 @@ import java.io.File
 
 class ExtensionMainAPITest {
     @Test
+    fun loadsAllChapterPagesFromLnReaderPaginationMethod() {
+        val bundle = File.createTempFile("quicknovel-pagination-", ".js")
+        bundle.writeText("module.exports = {};")
+        try {
+            val extension = InstalledExtension(
+                id = "pagination-test",
+                name = "Pagination test",
+                site = "https://example.com",
+                version = "1",
+                language = "English",
+                url = "https://example.com/plugin.js",
+                repositoryUrl = "https://example.com/plugins.min.json",
+                bundlePath = bundle.absolutePath,
+            )
+            val api = ExtensionMainAPI(extension) { operation, args ->
+                when (operation) {
+                    "searchNovels" -> """[{"name":"Paged Novel","path":"series"}]"""
+                    "parseNovel" -> """{"name":"Paged Novel","path":"series","totalPages":3,"chapters":[{"name":"Chapter 1","path":"chapter-1"}]}"""
+                    "parsePage" -> when (args.getString(1)) {
+                        "2" -> """{"chapters":[{"name":"Chapter 2","path":"chapter-2"}]}"""
+                        "3" -> """{"chapters":[{"name":"Chapter 3","path":"chapter-3"}]}"""
+                        else -> throw AssertionError("Unexpected chapter page: ${args.getString(1)}")
+                    }
+                    else -> null
+                }
+            }
+
+            val search = kotlinx.coroutines.runBlocking { api.search("paged") }
+            assertEquals(1, search?.size)
+            val novel = kotlinx.coroutines.runBlocking { api.load(search!!.first().url) }
+                as com.lagradost.quicknovel.StreamResponse
+            assertEquals(3, novel.data.size)
+            assertEquals(listOf("Chapter 1", "Chapter 2", "Chapter 3"), novel.data.map { it.name })
+        } finally {
+            bundle.delete()
+        }
+    }
+
+    @Test
     fun routesSearchNovelAndChapterThroughOpaqueLnReaderPaths() {
         val bundle = File.createTempFile("quicknovel-adapter-", ".js")
         bundle.writeText("module.exports = {};")
