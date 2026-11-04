@@ -24,6 +24,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Column
@@ -67,6 +70,9 @@ import com.lagradost.quicknovel.R
 import com.lagradost.quicknovel.mvvm.logError
 import com.lagradost.quicknovel.ui.txt
 import com.lagradost.quicknovel.util.Apis.Companion.apis
+import com.lagradost.quicknovel.extensions.ExtensionSettingsManager
+import com.lagradost.quicknovel.extensions.ExtensionSetting
+import com.lagradost.quicknovel.extensions.InstalledExtension
 import com.lagradost.quicknovel.util.AppUtils.openInBrowser
 import com.lagradost.quicknovel.util.BackupUtils
 import com.lagradost.quicknovel.util.InAppUpdater.Companion.runAutoUpdate
@@ -236,6 +242,11 @@ object SettingScreen : SearchableSettings {
                             var repositoryRefreshing by remember { mutableStateOf(false) }
                             var extensionSearchQuery by remember { mutableStateOf("") }
                             var pendingExtensionInstall by remember { mutableStateOf<com.lagradost.quicknovel.extensions.ExtensionListing?>(null) }
+                            var pendingExtensionSettings by remember { mutableStateOf<InstalledExtension?>(null) }
+                            var pluginSettings by remember { mutableStateOf(emptyList<ExtensionSetting>()) }
+                            var pluginSettingsLoading by remember { mutableStateOf(false) }
+                            var pluginSettingsSaving by remember { mutableStateOf(false) }
+                            var pluginSettingsStatus by remember { mutableStateOf("") }
                             val filteredExtensionListings = extensionListings.filter { entry ->
                                 val query = extensionSearchQuery.trim()
                                 query.isBlank() ||
@@ -243,6 +254,33 @@ object SettingScreen : SearchableSettings {
                                     entry.site.contains(query, ignoreCase = true) ||
                                     entry.language.contains(query, ignoreCase = true) ||
                                     entry.id.contains(query, ignoreCase = true)
+                            }
+
+                            fun openPluginSettings(extension: InstalledExtension) {
+                                pendingExtensionSettings = extension
+                                pluginSettings = emptyList()
+                                pluginSettingsStatus = ""
+                                pluginSettingsLoading = true
+                                scope.launch {
+                                    val result = withContext(Dispatchers.IO) {
+                                        ExtensionSettingsManager.getSettings(context, extension)
+                                    }
+                                    result.onSuccess { entries ->
+                                        pluginSettings = entries
+                                        if (entries.isEmpty()) {
+                                            pluginSettingsStatus = "This extension does not declare configurable settings."
+                                        }
+                                    }.onFailure { error ->
+                                        pluginSettingsStatus = error.message ?: "Could not load extension settings."
+                                    }
+                                    pluginSettingsLoading = false
+                                }
+                            }
+
+                            fun updatePluginSetting(key: String, value: Any?) {
+                                pluginSettings = pluginSettings.map { setting ->
+                                    if (setting.key == key) setting.copy(value = value) else setting
+                                }
                             }
 
                             fun refreshExtensionCatalog() {
@@ -341,11 +379,16 @@ object SettingScreen : SearchableSettings {
                                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                                     Text(installed.name, style = MaterialTheme.typography.bodyMedium)
                                                     Text("${installed.site} · ${installed.language} · ${installed.version}", style = MaterialTheme.typography.bodySmall)
-                                                    TextButton(onClick = {
-                                                        val removed = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.uninstall(context, installed.id)
-                                                        installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
-                                                        repositoryStatus = if (removed) "${installed.name} uninstalled." else "Could not uninstall ${installed.name}."
-                                                    }) { Text("Uninstall") }
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                        if (installed.hasSettings) {
+                                                            TextButton(onClick = { openPluginSettings(installed) }) { Text("Settings") }
+                                                        }
+                                                        TextButton(onClick = {
+                                                            val removed = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.uninstall(context, installed.id)
+                                                            installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
+                                                            repositoryStatus = if (removed) "${installed.name} uninstalled." else "Could not uninstall ${installed.name}."
+                                                        }) { Text("Uninstall") }
+                                                    }
                                                 }
                                             }
                                             item {
@@ -381,6 +424,131 @@ object SettingScreen : SearchableSettings {
                                     },
                                     confirmButton = {
                                         TextButton(onClick = { repositoryDialogOpen = false }) { Text("Done") }
+                                    }
+                                )
+                            }
+                            if (pendingExtensionSettings != null) {
+                                val settingsExtension = pendingExtensionSettings!!
+                                AlertDialog(
+                                    onDismissRequest = {
+                                        if (!pluginSettingsSaving) pendingExtensionSettings = null
+                                    },
+                                    title = { Text("${settingsExtension.name} settings") },
+                                    text = {
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            when {
+                                                pluginSettingsLoading -> Text("Loading plugin settings…")
+                                                pluginSettings.isEmpty() -> Text(pluginSettingsStatus.ifBlank { "No settings are declared by this extension." })
+                                                else -> LazyColumn(
+                                                    modifier = Modifier.fillMaxWidth().height(360.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                                ) {
+                                                    items(pluginSettings, key = { it.key }) { setting ->
+                                                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                            Text(setting.label, style = MaterialTheme.typography.titleSmall)
+                                                            when (setting.type) {
+                                                                "Switch" -> Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                                ) {
+                                                                    Text(if (setting.value == true) "Enabled" else "Disabled")
+                                                                    Switch(
+                                                                        checked = setting.value == true,
+                                                                        onCheckedChange = { value -> updatePluginSetting(setting.key, value) }
+                                                                    )
+                                                                }
+                                                                "Select" -> {
+                                                                    if (setting.options.isEmpty()) {
+                                                                        Text("No options are available for this setting.")
+                                                                    } else {
+                                                                        setting.options.forEach { option ->
+                                                                            Row(
+                                                                                modifier = Modifier.fillMaxWidth(),
+                                                                                horizontalArrangement = Arrangement.Start
+                                                                            ) {
+                                                                                RadioButton(
+                                                                                    selected = setting.value == option.value,
+                                                                                    onClick = { updatePluginSetting(setting.key, option.value) }
+                                                                                )
+                                                                                Text(option.label, modifier = Modifier.padding(top = 12.dp))
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                "CheckboxGroup" -> {
+                                                                    val selected = (setting.value as? List<*>)
+                                                                        ?.filterIsInstance<String>().orEmpty()
+                                                                    if (setting.options.isEmpty()) {
+                                                                        Text("No options are available for this setting.")
+                                                                    } else {
+                                                                        setting.options.forEach { option ->
+                                                                            Row(
+                                                                                modifier = Modifier.fillMaxWidth(),
+                                                                                horizontalArrangement = Arrangement.Start
+                                                                            ) {
+                                                                                Checkbox(
+                                                                                    checked = option.value in selected,
+                                                                                    onCheckedChange = { checked ->
+                                                                                        val updated = if (checked) {
+                                                                                            (selected + option.value).distinct()
+                                                                                        } else {
+                                                                                            selected - option.value
+                                                                                        }
+                                                                                        updatePluginSetting(setting.key, updated)
+                                                                                    }
+                                                                                )
+                                                                                Text(option.label, modifier = Modifier.padding(top = 12.dp))
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                else -> OutlinedTextField(
+                                                                    value = setting.value as? String ?: "",
+                                                                    onValueChange = { value -> updatePluginSetting(setting.key, value) },
+                                                                    label = { Text(setting.label) },
+                                                                    singleLine = true,
+                                                                    modifier = Modifier.fillMaxWidth()
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if (pluginSettingsStatus.isNotBlank() && pluginSettings.isNotEmpty()) {
+                                                Text(pluginSettingsStatus, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                        }
+                                    },
+                                    confirmButton = {
+                                        TextButton(
+                                            enabled = !pluginSettingsLoading && !pluginSettingsSaving && pluginSettings.isNotEmpty(),
+                                            onClick = {
+                                                pluginSettingsSaving = true
+                                                pluginSettingsStatus = ""
+                                                scope.launch {
+                                                    val result = withContext(Dispatchers.IO) {
+                                                        ExtensionSettingsManager.saveSettings(
+                                                            context,
+                                                            settingsExtension,
+                                                            pluginSettings
+                                                        )
+                                                    }
+                                                    result.onSuccess {
+                                                        pendingExtensionSettings = null
+                                                        pluginSettingsStatus = ""
+                                                    }.onFailure { error ->
+                                                        pluginSettingsStatus = error.message ?: "Could not save extension settings."
+                                                    }
+                                                    pluginSettingsSaving = false
+                                                }
+                                            }
+                                        ) { Text(if (pluginSettingsSaving) "Saving…" else "Save") }
+                                    },
+                                    dismissButton = {
+                                        TextButton(
+                                            enabled = !pluginSettingsSaving,
+                                            onClick = { pendingExtensionSettings = null }
+                                        ) { Text("Cancel") }
                                     }
                                 )
                             }
