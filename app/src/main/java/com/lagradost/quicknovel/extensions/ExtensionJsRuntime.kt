@@ -331,14 +331,14 @@ object ExtensionJsRuntime {
                   if (typeof this.URL === 'undefined') {
                     function QNURLSearchParams(query) {
                       this._pairs = [];
-                      var raw = String(query || '').replace(/^\\?/, '');
+                      var raw = String(query || '').replace(/^\?/, '');
                       if (raw) raw.split('&').forEach(function(part) {
                         if (!part) return;
                         var at = part.indexOf('=');
                         var key = at < 0 ? part : part.slice(0, at);
                         var value = at < 0 ? '' : part.slice(at + 1);
-                        try { key = decodeURIComponent(key.replace(/\\+/g, ' ')); } catch (_) {}
-                        try { value = decodeURIComponent(value.replace(/\\+/g, ' ')); } catch (_) {}
+                        try { key = decodeURIComponent(key.replace(/\+/g, ' ')); } catch (_) {}
+                        try { value = decodeURIComponent(value.replace(/\+/g, ' ')); } catch (_) {}
                         this._pairs.push([key, value]);
                       }, this);
                     }
@@ -366,7 +366,7 @@ object ExtensionJsRuntime {
                       var value=String(input), baseValue=base == null ? '' : (base instanceof QNURL ? base.href : String(base));
                       if (!/^[a-z][a-z0-9+.-]*:/i.test(value)) {
                         if (!baseValue) throw new TypeError('Invalid URL');
-                        var bm=baseValue.match(/^([a-z][a-z0-9+.-]*:)\\/\\/([^\\/?#]+)([^?#]*)(\\?[^#]*)?(#.*)?$/i);
+                        var bm=baseValue.match(/^([a-z][a-z0-9+.-]*:)\/\/([^\/?#]+)([^?#]*)(\?[^#]*)?(#.*)?$/i);
                         if (!bm) throw new TypeError('Invalid base URL');
                         if (value.indexOf('//')===0) value=bm[1]+value;
                         else if (value.charAt(0)==='#') value=bm[1]+'//'+bm[2]+(bm[3]||'/')+(bm[4]||'')+value;
@@ -380,11 +380,11 @@ object ExtensionJsRuntime {
                           value=bm[1]+'//'+bm[2]+normalized+suffix;
                         }
                       }
-                      var m=value.match(/^([a-z][a-z0-9+.-]*:)\\/\\/([^\\/?#]+)([^?#]*)(\\?[^#]*)?(#.*)?$/i);
+                      var m=value.match(/^([a-z][a-z0-9+.-]*:)\/\/([^\/?#]+)([^?#]*)(\?[^#]*)?(#.*)?$/i);
                       if(!m) throw new TypeError('Invalid URL: '+value);
                       var authority=m[2], at=authority.lastIndexOf('@'), hostpart=at>=0?authority.slice(at+1):authority;
                       var colon=hostpart.lastIndexOf(':'), hostname=hostpart, port='';
-                      if(colon>0 && /^\\d+$/.test(hostpart.slice(colon+1))){hostname=hostpart.slice(0,colon);port=hostpart.slice(colon+1);}
+                      if(colon>0 && /^\d+$/.test(hostpart.slice(colon+1))){hostname=hostpart.slice(0,colon);port=hostpart.slice(colon+1);}
                       this.protocol=m[1].toLowerCase(); this.username=at>=0?authority.slice(0,at).split(':')[0]:''; this.password=at>=0&&authority.slice(0,at).indexOf(':')>=0?authority.slice(0,at).split(':').slice(1).join(':'):'';
                       this.hostname=hostname.toLowerCase(); this.port=port; this.host=this.hostname+(port?':'+port:'');
                       this.pathname=m[3]||'/'; this.search=m[4]||''; this.hash=m[5]||'';
