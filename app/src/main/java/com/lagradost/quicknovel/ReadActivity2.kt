@@ -445,7 +445,7 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
             else -> ((firstVisible + fractionWithinItem) / itemCount.toFloat()).coerceIn(0f, 1f)
         }
         binding.readOverflowProgress.progress = (chapterFraction * 1000f).roundToInt()
-        binding.readOverflowProgress.isVisible = true
+        binding.readOverflowProgress.isVisible = binding.readNormalLayout.isVisible
     }
 
     fun onScroll() {
@@ -840,7 +840,7 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
         setContentView(binding.root)
         binding.readOverflowProgress.apply {
             isIndeterminate = false
-            isVisible = true
+            isVisible = false
             max = 1000
             progress = 0
             progressTintList = ColorStateList.valueOf(ContextCompat.getColor(this@ReadActivity2, R.color.colorPrimary))
