@@ -389,4 +389,70 @@ class ExtensionMainAPITest {
         }
     }
 
+    @Test
+    fun searchLoadsMultiplePagesAndStopsAtEmptyPage() {
+        val bundle = File.createTempFile("quicknovel-search-pages-", ".js")
+        bundle.writeText("module.exports = {};")
+        try {
+            val extension = InstalledExtension(
+                id = "search-pages-test",
+                name = "Search pages test",
+                site = "https://example.com",
+                version = "1",
+                language = "English",
+                url = "https://example.com/plugin.js",
+                repositoryUrl = "https://example.com/plugins.min.json",
+                bundlePath = bundle.absolutePath,
+            )
+            val requestedPages = mutableListOf<Int>()
+            val api = ExtensionMainAPI(extension) { operation, args ->
+                if (operation != "searchNovels") return@ExtensionMainAPI null
+                val page = args.getInt(1)
+                requestedPages += page
+                when (page) {
+                    1 -> """[{"name":"First","path":"first"}]"""
+                    2 -> """[{"name":"Second","path":"second"}]"""
+                    else -> "[]"
+                }
+            }
+
+            val results = kotlinx.coroutines.runBlocking { api.search("sample") }
+            assertEquals(listOf(1, 2, 3), requestedPages)
+            assertEquals(listOf("First", "Second"), results!!.map { it.name })
+        } finally {
+            bundle.delete()
+        }
+    }
+
+    @Test
+    fun searchStopsWhenAnExtensionIgnoresPageArgument() {
+        val bundle = File.createTempFile("quicknovel-search-repeat-", ".js")
+        bundle.writeText("module.exports = {};")
+        try {
+            val extension = InstalledExtension(
+                id = "search-repeat-test",
+                name = "Search repeat test",
+                site = "https://example.com",
+                version = "1",
+                language = "English",
+                url = "https://example.com/plugin.js",
+                repositoryUrl = "https://example.com/plugins.min.json",
+                bundlePath = bundle.absolutePath,
+            )
+            var calls = 0
+            val api = ExtensionMainAPI(extension) { operation, _ ->
+                if (operation != "searchNovels") return@ExtensionMainAPI null
+                calls++
+                """[{"name":"Same result","path":"same"}]"""
+            }
+
+            val results = kotlinx.coroutines.runBlocking { api.search("sample") }
+            assertEquals(2, calls)
+            assertEquals(1, results!!.size)
+            assertEquals("Same result", results.first().name)
+        } finally {
+            bundle.delete()
+        }
+    }
+
 }
