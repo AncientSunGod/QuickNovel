@@ -10,6 +10,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
+import java.io.File
 import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -232,8 +233,43 @@ class ExtensionMainAPI internal constructor(
     override suspend fun loadHtml(url: String): String? = withContext(Dispatchers.IO) {
         val path = extractPluginPath(url) ?: return@withContext null
         val result = execute("parseChapter", JSONArray().put(path)) ?: return@withContext null
-        runCatching { JSONTokener(result).nextValue() as? String }.getOrNull()
+        var html = runCatching { JSONTokener(result).nextValue() as? String }.getOrNull()
+            ?: return@withContext null
+
+        // LNReader customJS runs against the parsed chapter with Cheerio-style globals.
+        // If an optional script uses an unsupported API, keep the original chapter readable.
+        readCustomAsset(extension.customJsPath)?.let { script ->
+            val transformed = ExtensionJsRuntime.execute(
+                extension = extension,
+                operation = "transformChapterHtml",
+                argumentsJson = JSONArray().put(html).toString(),
+                storageContext = context,
+                customScript = script,
+            ).getOrNull()?.json
+            html = transformed?.let { runCatching { JSONTokener(it).nextValue() as? String }.getOrNull() }
+                ?: html
+        }
+
+        readCustomAsset(extension.customCssPath)?.takeIf { it.isNotBlank() }?.let { css ->
+            val safeCss = css.replace(Regex("(?i)</style"), "<\\\\/style")
+            html = "<style>\\n$safeCss\\n</style>\\n$html"
+        }
+        html
     }
+
+    private fun readCustomAsset(path: String?): String? = runCatching {
+        path ?: return@runCatching null
+        val bundleDirectory = File(extension.bundlePath).canonicalFile.parentFile
+            ?: return@runCatching null
+        val assetFile = File(path).canonicalFile
+        require(assetFile.parentFile == bundleDirectory) {
+            "Extension custom assets must remain inside the installed extension directory."
+        }
+        require(assetFile.isFile && assetFile.length() in 1..(512L * 1024L)) {
+            "Extension custom asset is missing or exceeds the 512 KB limit."
+        }
+        assetFile.readText(Charsets.UTF_8)
+    }.getOrNull()
 
     private fun execute(operation: String, args: JSONArray): String? =
         operationOverride?.invoke(operation, args)
