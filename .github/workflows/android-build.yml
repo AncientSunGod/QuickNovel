@@ -11,7 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: quicknovel-android-build
+  # Keep master and pull-request builds from blocking one another.
+  group: quicknovel-android-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
