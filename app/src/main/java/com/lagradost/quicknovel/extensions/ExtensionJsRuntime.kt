@@ -690,7 +690,7 @@ object ExtensionJsRuntime {
                 ScriptableObject.putProperty(scope, "__qnTransformHtml", html)
                 cx.evaluateString(
                     scope,
-                    "var $ = require('cheerio').load(__qnTransformHtml); var loadedCheerio = $;",
+                    "var \$ = require('cheerio').load(__qnTransformHtml); var loadedCheerio = \$;",
                     "extension-custom-dom.js",
                     1,
                     null,
@@ -698,7 +698,7 @@ object ExtensionJsRuntime {
                 if (!customScript.isNullOrBlank()) {
                     cx.evaluateString(scope, customScript, "extension-custom.js", 1, null)
                 }
-                val transformed = cx.evaluateString(scope, "$.html()", "extension-custom-result.js", 1, null)
+                val transformed = cx.evaluateString(scope, "\$.html()", "extension-custom-result.js", 1, null)
                 JSONObject.quote(Context.toString(transformed))
             } else {
                 val invocation = """
