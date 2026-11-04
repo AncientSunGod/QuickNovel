@@ -29,6 +29,7 @@ object ExtensionResponseMapper {
         json: String,
         apiName: String,
         baseUrl: String,
+        posterHeaders: Map<String, String>? = null,
     ): List<SearchResponse> {
         val array = JSONArray(json)
         require(array.length() <= MAX_SEARCH_RESULTS) {
@@ -54,6 +55,7 @@ object ExtensionResponseMapper {
                             ?.let { resolveHttpUrl(baseUrl, it) },
                         latestChapter = item.safeText("latestChapter").takeIf { it.isNotBlank() },
                         apiName = apiName,
+                        posterHeaders = posterHeaders,
                     )
                 )
             }
@@ -65,6 +67,7 @@ object ExtensionResponseMapper {
         apiName: String,
         baseUrl: String,
         requestedUrl: String,
+        posterHeaders: Map<String, String>? = null,
     ): StreamResponse {
         val item = JSONObject(json)
         val title = item.safeText("title").ifBlank { item.safeText("name") }
@@ -118,6 +121,7 @@ object ExtensionResponseMapper {
             rating = item.optDouble("rating", Double.NaN)
                 .takeIf { it.isFinite() && it >= 0.0 }
                 ?.let { (it.coerceAtMost(5.0) * 200.0).roundToInt().coerceIn(0, 1000) },
+            posterHeaders = posterHeaders,
             synopsis = item.safeText("synopsis")
                 .ifBlank { item.safeText("summary") }
                 .takeIf { it.isNotBlank() },
