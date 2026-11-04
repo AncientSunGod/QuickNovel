@@ -163,6 +163,91 @@ class ExtensionMainAPITest {
     }
 
     @Test
+    fun runsRealChikariBundleThroughSearchBrowseNovelAndChapterAdapter() {
+        val source = javaClass.getResourceAsStream("/lnreader/chikari.js")!!
+            .bufferedReader()
+            .use { it.readText() }
+        val bundle = File.createTempFile("quicknovel-real-chikari-", ".js")
+        bundle.writeText(source)
+        try {
+            val extension = InstalledExtension(
+                id = "chikari",
+                name = "Chikari",
+                site = "https://chikari.moe",
+                version = "1.0.2",
+                language = "English",
+                url = "https://example.com/chikari.js",
+                repositoryUrl = "https://example.com/plugins.min.json",
+                bundlePath = bundle.absolutePath,
+            )
+            val api = ExtensionMainAPI(
+                extension = extension,
+                testFetchOverride = { url ->
+                    when (url) {
+                        "https://chikari.moe/api/series?type=novel&sort=popular&q=sample&limit=36&offset=0" ->
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "application/json",
+                                """{"items":[{"title":"Sample Novel","slug":"sample-novel","cover_url":"https://chikari.moe/cover.jpg"}]}""",
+                            )
+                        "https://chikari.moe/api/series?type=novel&sort=trending&genre=fantasy&limit=60&offset=0" ->
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "application/json",
+                                """{"items":[{"title":"Trending Novel","slug":"trending-novel","cover_url":"https://chikari.moe/trending.jpg"}]}""",
+                            )
+                        "https://chikari.moe/api/novels/sample-novel" ->
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "application/json",
+                                """{"title":"Sample Novel","authors":[{"name":"Test Author"}],"genres":[{"name":"Fantasy"}],"description":"A sample novel.","status":"releasing","cover_url":"https://chikari.moe/cover.jpg"}""",
+                            )
+                        "https://chikari.moe/api/novels/sample-novel/chapters?order=asc&limit=500&offset=0" ->
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "application/json",
+                                """{"items":[{"title":"Chapter One","number":1,"created_at":"2026-10-01"}]}""",
+                            )
+                        "https://chikari.moe/api/novels/sample-novel/chapters/1/read" ->
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "application/json",
+                                """{"body":"First paragraph\\nSecond paragraph"}""",
+                            )
+                        else -> throw AssertionError("Unexpected Chikari adapter request: $url")
+                    }
+                },
+            )
+
+            assertEquals(listOf("Popular" to "popular", "Trending" to "trending", "Top Rated" to "top_rated",
+                "Recently Updated" to "updated", "Recently Added" to "added", "Most Bookmarked" to "most_bookmarked"),
+                api.orderBys)
+            assertTrue(api.tags.any { it.second == "fantasy" })
+
+            val search = kotlinx.coroutines.runBlocking { api.search("sample") }
+            assertEquals(1, search?.size)
+            val searchItem = search!!.first()
+            assertEquals("Sample Novel", searchItem.name)
+            assertTrue(searchItem.url.contains("#qn_ext_path=sample-novel"))
+
+            val browse = kotlinx.coroutines.runBlocking {
+                api.loadMainPage(1, null, "trending", "fantasy")
+            }
+            assertEquals("Trending Novel", browse.list.single().name)
+
+            val loaded = kotlinx.coroutines.runBlocking { api.load(searchItem.url) }
+                as com.lagradost.quicknovel.StreamResponse
+            assertEquals("Sample Novel", loaded.name)
+            assertEquals("Test Author", loaded.author)
+            assertEquals(1, loaded.data.size)
+            assertTrue(loaded.data.first().url.contains("qn_ext_path=api%2Fnovels%2Fsample-novel%2Fchapters%2F1%2Fread"))
+
+            val chapterHtml = kotlinx.coroutines.runBlocking {
+                api.loadHtml(loaded.data.first().url)
+            }
+            assertTrue(chapterHtml.orEmpty().contains("<p>First paragraph</p>"))
+            assertTrue(chapterHtml.orEmpty().contains("<p>Second paragraph</p>"))
+        } finally {
+            bundle.delete()
+        }
+    }
+
+    @Test
     fun routesSearchNovelAndChapterThroughOpaqueLnReaderPaths() {
         val bundle = File.createTempFile("quicknovel-adapter-", ".js")
         bundle.writeText("module.exports = {};")
