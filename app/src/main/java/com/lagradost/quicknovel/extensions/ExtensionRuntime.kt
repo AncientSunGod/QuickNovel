@@ -42,7 +42,7 @@ object ExtensionRuntime {
             version = extension.version,
             bytes = size,
             syntaxValid = null,
-            message = "Package checks passed. This check does not validate JavaScript syntax or LNReader module compatibility.",
+            message = "Package checks passed. JavaScript was not executed or syntax-checked, and LNReader module compatibility was not validated.",
         )
     }
 }
