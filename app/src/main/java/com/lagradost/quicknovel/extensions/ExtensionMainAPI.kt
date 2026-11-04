@@ -119,7 +119,7 @@ class ExtensionMainAPI internal constructor(
         orderBy: String?,
         tag: String?,
     ): JSONObject {
-        val selections = listOf(mainCategory, orderBy, tag)
+        val selections = listOf(orderBy, mainCategory, tag)
         val selectedFilters = JSONObject()
         val pickerIndexes = pickerFilters.mapIndexed { index, pair -> pair.first to index }.toMap()
         val keys = pluginFilters.keys()
