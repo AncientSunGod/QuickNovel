@@ -91,26 +91,48 @@ object ExtensionJsRuntime {
                     require(fetchCount <= 20) { "Extension exceeded the 20-request operation limit." }
                     val requestedUrl = args.firstOrNull()?.toString().orEmpty()
                     require(requestedUrl.isNotBlank()) { "Extension fetch URL is missing." }
-                    val headersJson = args.getOrNull(1)?.toString().orEmpty()
-                    val requestHeaders = runCatching {
-                        val json = JSONObject(headersJson)
-                        buildMap {
-                            val keys = json.keys()
-                            while (keys.hasNext()) {
-                                val key = keys.next()
-                                put(key, json.optString(key, ""))
-                            }
+                    val init = runCatching {
+                        JSONObject(args.getOrNull(1)?.toString().orEmpty())
+                    }.getOrDefault(JSONObject())
+                    val method = init.optString("method", "GET").uppercase(java.util.Locale.ROOT)
+                    require(method == "GET" || method == "POST") {
+                        "Extension requests currently support GET and POST only."
+                    }
+                    val headerJson = init.optJSONObject("headers") ?: JSONObject()
+                    val requestHeaders = buildMap {
+                        val keys = headerJson.keys()
+                        while (keys.hasNext()) {
+                            val key = keys.next()
+                            put(key, headerJson.optString(key, ""))
                         }
-                    }.getOrDefault(emptyMap())
-                    val response = testFetchOverride?.invoke(requestedUrl) ?: ExtensionHttpClient.getText(
-                        requestedUrl,
+                    }
+                    val bodyValue = init.opt("body")
+                    val requestBody = when {
+                        bodyValue == null || bodyValue === JSONObject.NULL -> null
+                        bodyValue is String -> bodyValue
+                        else -> throw IllegalArgumentException(
+                            "Extension request bodies must be strings; multipart and binary bodies are not supported."
+                        )
+                    }
+                    require(method != "GET" || requestBody == null) {
+                        "GET requests may not include a request body."
+                    }
+                    require(requestBody == null || requestBody.toByteArray(Charsets.UTF_8).size <= 256 * 1024) {
+                        "Extension request body exceeds the 256 KB limit."
+                    }
+                    val response = testFetchOverride?.invoke(requestedUrl) ?: ExtensionHttpClient.requestText(
+                        rawUrl = requestedUrl,
+                        method = method,
+                        body = requestBody,
                         headers = requestHeaders,
                         allowedHosts = setOf(approvedHost),
                     ).getOrThrow()
                     return JSONObject()
                         .put("url", response.url)
                         .put("statusCode", response.statusCode)
+                        .put("statusText", response.statusText.ifBlank { response.statusCode.toString() })
                         .put("contentType", response.contentType)
+                        .put("headers", JSONObject(response.headers))
                         .put("body", response.body)
                         .toString()
                 }
@@ -286,23 +308,43 @@ object ExtensionJsRuntime {
                   this.require = function(name) {
                     if (name === '@libs/fetch') return {
                       fetchApi: function(url, init) {
-                        if (init && init.method && String(init.method).toUpperCase() !== 'GET')
-                          throw new Error('Only GET requests are supported by this extension bridge.');
+                        var method = init && init.method ? String(init.method).toUpperCase() : 'GET';
+                        if (method !== 'GET' && method !== 'POST')
+                          throw new Error('Only GET and POST requests are supported by this extension bridge.');
                         var headers = init && init.headers ? init.headers : {};
                         if (headers && typeof headers.forEach === 'function') {
                           var normalized = {};
                           headers.forEach(function(value, key) { normalized[key] = value; });
                           headers = normalized;
                         }
-                        return Promise.resolve(JSON.parse(__qnFetch(String(url), JSON.stringify(headers)))).then(function(r) {
+                        var request = {method:method, headers:headers};
+                        if (init && init.body != null) {
+                          if (typeof init.body !== 'string')
+                            throw new Error('Only string request bodies are supported by this extension bridge.');
+                          request.body = init.body;
+                        }
+                        return Promise.resolve(JSON.parse(__qnFetch(String(url), JSON.stringify(request)))).then(function(r) {
+                          var responseHeaders = r.headers || {};
                           return {
                             url: r.url, status: r.statusCode, ok: r.statusCode >= 200 && r.statusCode < 300,
-                            statusText: String(r.statusCode), body: r.body,
+                            statusText: r.statusText || String(r.statusCode), body: r.body,
                             text: function() { return Promise.resolve(r.body); },
                             json: function() { return Promise.resolve(JSON.parse(r.body)); },
-                            headers: { get: function(key) {
-                              return String(key).toLowerCase() === 'content-type' ? r.contentType : null;
-                            } }
+                            headers: {
+                              get: function(key) {
+                                var normalized = String(key).toLowerCase();
+                                return responseHeaders[normalized] ||
+                                  (normalized === 'content-type' ? r.contentType : null);
+                              },
+                              has: function(key) {
+                                return this.get(key) != null;
+                              },
+                              forEach: function(callback) {
+                                Object.keys(responseHeaders).forEach(function(key) {
+                                  callback(responseHeaders[key], key);
+                                });
+                              }
+                            }
                           };
                         });
                       },
