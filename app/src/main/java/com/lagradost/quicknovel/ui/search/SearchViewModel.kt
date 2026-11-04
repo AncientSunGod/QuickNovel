@@ -27,7 +27,6 @@ class SearchViewModel : ViewModel() {
 
     @Volatile
     var searchCounter = 0
-    private val repos = apis.map { APIRepository(it) }
 
     fun clearSearch() {
         searchCounter++
@@ -54,6 +53,10 @@ class SearchViewModel : ViewModel() {
             return
         }
         ongoingSearchJob?.cancel()
+        // Installed extensions can change while the SearchViewModel stays alive. Resolve
+        // the dynamic API list for each search so a newly installed provider is usable
+        // without forcing an application restart or recreating this ViewModel.
+        val repos = apis.map { APIRepository(it) }
         ongoingSearchJob = ioSafe {
             searchCounter++
             val localSearchCounter = searchCounter
