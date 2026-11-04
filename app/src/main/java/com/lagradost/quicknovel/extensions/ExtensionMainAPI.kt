@@ -399,13 +399,13 @@ class ExtensionMainAPI internal constructor(
             value in setOf("english", "en-us", "en-gb") -> "en"
             value == "arabic" || value.any { it in '\u0600'..'\u06ff' } -> "ar"
             value in setOf("bengali", "bangla") || value.any { it in '\u0980'..'\u09ff' } -> "bn"
+            value == "japanese" || value == "日本語" ||
+                value.any { it in '\u3040'..'\u30ff' } -> "ja"
             value in setOf("chinese", "simplified chinese") ||
                 value.any { it in '\u4e00'..'\u9fff' } -> "zh"
             value == "french" -> "fr"
             value == "german" -> "de"
             value == "indonesian" -> "id"
-            value == "japanese" || value.any { it in '\u3040'..'\u30ff' } -> "ja"
-            value == "korean" || value.any { it in '\uac00'..'\ud7af' } -> "ko"
             value == "portuguese" -> "pt"
             value == "russian" || value.any { it in '\u0400'..'\u04ff' } -> "ru"
             value == "spanish" -> "es"
