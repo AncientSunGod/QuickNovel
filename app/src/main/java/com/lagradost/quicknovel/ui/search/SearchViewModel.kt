@@ -5,6 +5,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import com.lagradost.quicknovel.APIRepository
 import com.lagradost.quicknovel.APIRepository.Companion.providersActive
+import com.lagradost.quicknovel.BaseApplication
 import com.lagradost.quicknovel.HomePageList
 import com.lagradost.quicknovel.MainActivity
 import com.lagradost.quicknovel.MainActivity.Companion.loadResult
@@ -12,6 +13,7 @@ import com.lagradost.quicknovel.OnGoingSearch
 import com.lagradost.quicknovel.SearchResponse
 import com.lagradost.quicknovel.mvvm.Resource
 import com.lagradost.quicknovel.util.Apis.Companion.apis
+import com.lagradost.quicknovel.util.Apis.Companion.getApiSettings
 import com.lagradost.quicknovel.util.Coroutines.ioSafe
 import com.lagradost.quicknovel.util.amap
 import kotlinx.coroutines.Job
@@ -53,9 +55,12 @@ class SearchViewModel : ViewModel() {
             return
         }
         ongoingSearchJob?.cancel()
-        // Installed extensions can change while the SearchViewModel stays alive. Resolve
-        // the dynamic API list for each search so a newly installed provider is usable
-        // without forcing an application restart or recreating this ViewModel.
+        // Installed extensions can change while the SearchViewModel stays alive.
+        // Refresh both the provider instances and the active-provider set so a newly
+        // installed extension is searchable without an application restart.
+        BaseApplication.context?.let { appContext ->
+            providersActive = appContext.getApiSettings()
+        }
         val repos = apis.map { APIRepository(it) }
         ongoingSearchJob = ioSafe {
             searchCounter++
