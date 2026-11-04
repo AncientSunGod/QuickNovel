@@ -246,6 +246,39 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsLnReaderFetchFileBinaryBase64Responses() {
+        val (extension, file) = extension(
+            "var fetchFile = require('@libs/fetch').fetchFile; " +
+                "module.exports = { searchNovels: function() { " +
+                "return fetchFile('https://example.com/cover.jpg').then(function(encoded) { " +
+                "return [{name:encoded}]; }); } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension = extension,
+                operation = "searchNovels",
+                argumentsJson = "[]",
+                testRequestOverride = { url, method, headers, body ->
+                    assertEquals("https://example.com/cover.jpg", url)
+                    assertEquals("GET", method)
+                    assertTrue(headers.isEmpty())
+                    assertEquals(null, body)
+                    ExtensionHttpClient.TextResponse(
+                        url = url,
+                        statusCode = 200,
+                        contentType = "image/jpeg",
+                        body = "",
+                        bodyBytes = byteArrayOf(0, 1, 2, 3, 0xfe.toByte(), 0xff.toByte()),
+                    )
+                },
+            ).getOrThrow()
+            assertEquals("AAECA/7/", JSONArray(result.json).getJSONObject(0).getString("name"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun supportsFetchApiPostOptionsAndStandardResponseMetadata() {
         val (extension, file) = extension(
             "var fetch = require('@libs/fetch'); " +
