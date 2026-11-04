@@ -399,6 +399,29 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun sessionStoragePersistsAcrossExtensionCallsButClearsWithTheSession() {
+        val (baseExtension, file) = extension(
+            "var session = require('@libs/storage').sessionStorage; " +
+                "module.exports = { searchNovels: function(mode) { " +
+                "if (mode === 'set') { session.setItem('session-key','session-value'); return []; } " +
+                "return [{name:session.getItem('session-key'),path:'read'}]; } };"
+        )
+        val extension = baseExtension.copy(id = "session-storage-lifecycle")
+        try {
+            ExtensionJsRuntime.execute(extension, "searchNovels", """["set"]""").getOrThrow()
+            val stored = ExtensionJsRuntime.execute(extension, "searchNovels", """["read"]""").getOrThrow()
+            assertEquals("""[{"name":"session-value","path":"read"}]""", stored.json)
+
+            ExtensionJsRuntime.clearSessionStorage(extension.id)
+            val cleared = ExtensionJsRuntime.execute(extension, "searchNovels", """["read"]""").getOrThrow()
+            assertEquals("""[{"name":null,"path":"read"}]""", cleared.json)
+        } finally {
+            ExtensionJsRuntime.clearSessionStorage(extension.id)
+            file.delete()
+        }
+    }
+
+    @Test
     fun fetchBridgeRejectsRequestsOutsideTheExtensionSite() {
         val (extension, file) = extension(
             "var fetch = require('@libs/fetch'); " +
