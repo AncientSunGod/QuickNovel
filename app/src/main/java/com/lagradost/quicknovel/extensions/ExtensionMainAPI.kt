@@ -251,8 +251,8 @@ class ExtensionMainAPI internal constructor(
         }
 
         readCustomAsset(extension.customCssPath)?.takeIf { it.isNotBlank() }?.let { css ->
-            val safeCss = css.replace(Regex("(?i)</style"), "<\\\\/style")
-            html = "<style>\\n$safeCss\\n</style>\\n$html"
+            val safeCss = css.replace(Regex("(?i)</style"), "<\\/style")
+            html = "<style>\n$safeCss\n</style>\n$html"
         }
         html
     }
