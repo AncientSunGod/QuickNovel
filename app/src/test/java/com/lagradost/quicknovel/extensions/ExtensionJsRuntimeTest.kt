@@ -166,6 +166,59 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsFetchApiPostOptionsAndStandardResponseMetadata() {
+        val (extension, file) = extension(
+            "var fetch = require('@libs/fetch'); " +
+                "module.exports = { searchNovels: function() { " +
+                "return fetch.fetchApi('https://example.com/api', {" +
+                "method:'POST',headers:{'Content-Type':'application/json'}," +
+                "body:'{\\\"query\\\":\\\"sample\\\"}'}).then(function(response) { " +
+                "return [{name:response.statusText,path:response.headers.get('content-type')," +
+                "latestChapter:response.ok ? String(response.status) : 'failed'}]; }); } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension,
+                "searchNovels",
+                "[]",
+                testFetchOverride = { url ->
+                    assertEquals("https://example.com/api", url)
+                    ExtensionHttpClient.TextResponse(
+                        url = url,
+                        statusCode = 201,
+                        contentType = "application/json",
+                        body = """{"ok":true}""",
+                        statusText = "Created",
+                        headers = mapOf("content-type" to "application/json"),
+                    )
+                },
+            ).getOrThrow()
+            val item = JSONArray(result.json).getJSONObject(0)
+            assertEquals("Created", item.getString("name"))
+            assertEquals("application/json", item.getString("path"))
+            assertEquals("201", item.getString("latestChapter"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun rejectsUnsupportedFetchMethods() {
+        val (extension, file) = extension(
+            "var fetch = require('@libs/fetch'); " +
+                "module.exports = { searchNovels: function() { " +
+                "return fetch.fetchApi('https://example.com/api', {method:'PUT'}); } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]")
+            assertTrue(result.isFailure)
+            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("GET and POST"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun supportsFetchTextAndCommonUrlHelpers() {
         val (extension, file) = extension(
             "var fetch = require('@libs/fetch'); " +
