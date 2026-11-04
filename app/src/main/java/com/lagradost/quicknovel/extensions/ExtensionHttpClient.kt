@@ -7,7 +7,7 @@ import java.net.URL
 import java.util.Locale
 
 /**
- * Bounded HTTP GET helper used by the restricted extension host bridge.
+ * Bounded HTTP helper used by the restricted extension host bridge.
  *
  * This deliberately has no Android Context or app-network objects. The JS bridge limits
  * calls and restricts requests to the extension's declared site host; this remains a
@@ -19,12 +19,15 @@ object ExtensionHttpClient {
         val statusCode: Int,
         val contentType: String?,
         val body: String,
+        val statusText: String = "",
+        val headers: Map<String, String> = emptyMap(),
     )
 
     private const val CONNECT_TIMEOUT_MS = 10_000
     private const val READ_TIMEOUT_MS = 15_000
     private const val MAX_REDIRECTS = 5
     private const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+    private const val MAX_REQUEST_BYTES = 256 * 1024
     private const val MAX_HEADER_VALUE_LENGTH = 2_000
 
     private val allowedRequestHeaders = setOf(
@@ -35,6 +38,9 @@ object ExtensionHttpClient {
         "authorization",
         "cookie",
         "origin",
+        "content-type",
+        "x-requested-with",
+        "x-csrf-token",
     )
 
     /**
@@ -46,8 +52,37 @@ object ExtensionHttpClient {
         rawUrl: String,
         headers: Map<String, String> = emptyMap(),
         allowedHosts: Set<String>? = null,
+    ): Result<TextResponse> = requestText(
+        rawUrl = rawUrl,
+        method = "GET",
+        headers = headers,
+        allowedHosts = allowedHosts,
+    )
+
+    /**
+     * Executes a bounded GET or POST request. Request bodies are UTF-8 strings only;
+     * arbitrary binary and multipart uploads are intentionally unsupported.
+     */
+    fun requestText(
+        rawUrl: String,
+        method: String = "GET",
+        body: String? = null,
+        headers: Map<String, String> = emptyMap(),
+        allowedHosts: Set<String>? = null,
     ): Result<TextResponse> = runCatching {
         var currentUrl = validateUrl(rawUrl, allowedHosts)
+        var currentMethod = method.trim().uppercase(Locale.ROOT)
+        var currentBody = body?.toByteArray(Charsets.UTF_8)
+        require(currentMethod == "GET" || currentMethod == "POST") {
+            "Extension requests currently support GET and POST only."
+        }
+        require(currentMethod != "GET" || currentBody == null) {
+            "GET requests may not include a request body."
+        }
+        require(currentBody == null || currentBody.size <= MAX_REQUEST_BYTES) {
+            "Extension request body exceeds the 256 KB limit."
+        }
+
         val safeHeaders = headers.entries
             .filter { it.key.lowercase(Locale.ROOT) in allowedRequestHeaders }
             .associate { (key, value) ->
@@ -58,13 +93,20 @@ object ExtensionHttpClient {
             val connection = (URL(currentUrl).openConnection() as HttpURLConnection)
             try {
                 connection.instanceFollowRedirects = false
-                connection.requestMethod = "GET"
+                connection.requestMethod = currentMethod
                 connection.connectTimeout = CONNECT_TIMEOUT_MS
                 connection.readTimeout = READ_TIMEOUT_MS
                 connection.setRequestProperty("Accept", "text/html,application/json,text/plain,*/*")
                 safeHeaders.forEach { (key, value) ->
                     if (!value.contains('\r') && !value.contains('\n')) {
                         connection.setRequestProperty(key, value)
+                    }
+                }
+                if (currentMethod == "POST") {
+                    connection.doOutput = true
+                    currentBody?.let { bytes ->
+                        connection.setFixedLengthStreamingMode(bytes.size)
+                        connection.outputStream.use { output -> output.write(bytes) }
                     }
                 }
 
@@ -75,7 +117,16 @@ object ExtensionHttpClient {
                     if (redirectIndex >= MAX_REDIRECTS) {
                         throw IllegalStateException("Extension request exceeded the redirect limit.")
                     }
-                    currentUrl = validateUrl(URL(currentUrl).toURI().resolve(location).toString(), allowedHosts)
+                    val nextUrl = URL(currentUrl).toURI().resolve(location).toString()
+                    require(!(URL(currentUrl).protocol.equals("https", ignoreCase = true) &&
+                        !URL(nextUrl).protocol.equals("https", ignoreCase = true))) {
+                        "HTTPS extension requests may not redirect to HTTP."
+                    }
+                    if (status == 303 || ((status == 301 || status == 302) && currentMethod == "POST")) {
+                        currentMethod = "GET"
+                        currentBody = null
+                    }
+                    currentUrl = validateUrl(nextUrl, allowedHosts)
                     return@repeat
                 }
 
@@ -96,12 +147,19 @@ object ExtensionHttpClient {
                     output.toByteArray()
                 } ?: ByteArray(0)
 
+                val responseHeaders = connection.headerFields.entries
+                    .filter { it.key != null && it.value?.isNotEmpty() == true }
+                    .associate { (key, values) ->
+                        key.lowercase(Locale.ROOT) to values.first().take(MAX_HEADER_VALUE_LENGTH)
+                    }
                 return Result.success(
                     TextResponse(
                         url = currentUrl,
                         statusCode = status,
                         contentType = connection.contentType,
                         body = String(bodyBytes, Charsets.UTF_8),
+                        statusText = connection.responseMessage.orEmpty(),
+                        headers = responseHeaders,
                     )
                 )
             } finally {
