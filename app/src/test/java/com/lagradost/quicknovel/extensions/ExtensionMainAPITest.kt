@@ -50,6 +50,50 @@ class ExtensionMainAPITest {
     }
 
     @Test
+    fun appliesInstalledCustomJsAndCssWhenLoadingExtensionChapters() {
+        val bundle = File.createTempFile("quicknovel-custom-assets-", ".js")
+        val customJs = File.createTempFile("quicknovel-custom-", ".js")
+        val customCss = File.createTempFile("quicknovel-custom-", ".css")
+        bundle.writeText("module.exports = {};")
+        customJs.writeText("loadedCheerio('.promo').remove();")
+        customCss.writeText("p { font-size: 1.1em; }")
+        try {
+            val extension = InstalledExtension(
+                id = "custom-assets-test",
+                name = "Custom assets test",
+                site = "https://example.com",
+                version = "1",
+                language = "English",
+                url = "https://example.com/plugin.js",
+                repositoryUrl = "https://example.com/plugins.min.json",
+                bundlePath = bundle.absolutePath,
+                customJsPath = customJs.absolutePath,
+                customCssPath = customCss.absolutePath,
+            )
+            val api = ExtensionMainAPI(extension) { operation, _ ->
+                when (operation) {
+                    "searchNovels" -> """[{"name":"Asset Novel","path":"series"}]"""
+                    "parseChapter" -> JSONObject.quote(
+                        """<div><p class="promo">Advertisement</p><p>Chapter text</p></div>"""
+                    )
+                    else -> null
+                }
+            }
+
+            val results = kotlinx.coroutines.runBlocking { api.search("asset") }
+            val html = kotlinx.coroutines.runBlocking { api.loadHtml(results!!.first().url)!! }
+            assertTrue(!html.contains("Advertisement"))
+            assertTrue(html.contains("Chapter text"))
+            assertTrue(html.contains("<style>"))
+            assertTrue(html.contains("font-size: 1.1em"))
+        } finally {
+            bundle.delete()
+            customJs.delete()
+            customCss.delete()
+        }
+    }
+
+    @Test
     fun mapsLnReaderPickerFiltersIntoQuickNovelMainPageControls() {
         val bundle = File.createTempFile("quicknovel-filters-", ".js")
         bundle.writeText("module.exports = {};")
