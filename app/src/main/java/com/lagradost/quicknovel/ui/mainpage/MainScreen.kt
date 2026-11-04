@@ -3,6 +3,8 @@ package com.lagradost.quicknovel.ui.mainpage
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -110,7 +112,7 @@ fun MainPageScreen(state: MainPageState, action: (MainPageAction) -> Unit) {
         derivedStateOf {
             val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             val totalItems = listState.layoutInfo.totalItemsCount
-            lastVisibleIndex >= totalItems - 5
+            totalItems > 0 && lastVisibleIndex >= totalItems - 5
         }
     }
 
@@ -145,10 +147,7 @@ fun MainPageScreen(state: MainPageState, action: (MainPageAction) -> Unit) {
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
-        SearchList(
-            lazyGridState = listState,
-            isRow = searchIsRowState,
-            items = if (state.openQuery) state.query.items else state.filter.items,
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 // This fixes the double padding from the bottom nav bar
@@ -156,9 +155,51 @@ fun MainPageScreen(state: MainPageState, action: (MainPageAction) -> Unit) {
                     start = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
                     end = innerPadding.calculateEndPadding(LocalLayoutDirection.current),
                     top = innerPadding.calculateTopPadding()
-                ),
-            searchAction = searchAction,
-        )
+                )
+        ) {
+            val visibleItems = if (state.openQuery) state.query.items else state.filter.items
+            val visibleError = if (state.openQuery) state.query.error else state.filter.error
+            val visibleLoading = if (state.openQuery) state.query.loading else state.filter.loading
+
+            SearchList(
+                lazyGridState = listState,
+                isRow = searchIsRowState,
+                items = visibleItems,
+                modifier = Modifier.fillMaxSize(),
+                searchAction = searchAction,
+            )
+
+            // An extension runtime failure previously left an empty black provider page.
+            // Show the actual error (or a clear empty state) and provide a retry action.
+            if (!visibleLoading && visibleItems.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = visibleError?.message ?: "No novels found.",
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                    )
+                    if (visibleError != null) {
+                        Button(
+                            onClick = {
+                                if (state.openQuery) {
+                                    action(MainPageAction.Search(state.query.query))
+                                } else {
+                                    action(MainPageAction.Expand)
+                                }
+                            }
+                        ) {
+                            Text("Retry")
+                        }
+                    }
+                }
+            }
+        }
 
         LaunchedEffect(shouldLoadMore.value) {
             if (shouldLoadMore.value && state.filter.error == null && !state.filter.loading) {
