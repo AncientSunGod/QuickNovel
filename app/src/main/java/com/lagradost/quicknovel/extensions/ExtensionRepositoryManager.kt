@@ -516,7 +516,7 @@ object ExtensionRepositoryManager {
         if (!isValidExtensionId(id)) return false
         val directory = File(File(context.filesDir, EXTENSIONS_DIR), id)
         val removed = !directory.exists() || directory.deleteRecursively()
-        if (removed) ExtensionJsRuntime.clearSessionStorage(id)
+        if (removed) ExtensionJsRuntime.clearExtensionData(context, id)
         return removed
     }
 }
