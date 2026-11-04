@@ -48,6 +48,7 @@ object ExtensionJsRuntime {
         argumentsJson: String,
         testFetchOverride: ((String) -> ExtensionHttpClient.TextResponse)? = null,
         storageContext: AndroidContext? = null,
+        testRequestOverride: ((String, String, Map<String, String>, String?) -> ExtensionHttpClient.TextResponse)? = null,
     ): Result<ExecutionResult> = runCatching {
         require(operation in allowedOperations) { "Unsupported extension operation." }
         require(argumentsJson.toByteArray(Charsets.UTF_8).size <= MAX_ARGUMENT_BYTES) {
@@ -120,7 +121,9 @@ object ExtensionJsRuntime {
                     require(requestBody == null || requestBody.toByteArray(Charsets.UTF_8).size <= 256 * 1024) {
                         "Extension request body exceeds the 256 KB limit."
                     }
-                    val response = testFetchOverride?.invoke(requestedUrl) ?: ExtensionHttpClient.requestText(
+                    val response = testRequestOverride?.invoke(
+                        requestedUrl, method, requestHeaders, requestBody
+                    ) ?: testFetchOverride?.invoke(requestedUrl) ?: ExtensionHttpClient.requestText(
                         rawUrl = requestedUrl,
                         method = method,
                         body = requestBody,
