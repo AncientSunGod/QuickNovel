@@ -1115,6 +1115,10 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
                     binding.readFail.isVisible = false
 
                     binding.readNormalLayout.isVisible = true
+                    // The reader can become visible without another RecyclerView scroll
+                    // event (initial chapter load, restore, or retry). Initialize the
+                    // position indicator after layout has measured the first visible item.
+                    binding.realText.post { updateChapterReadingProgress() }
 
                     if (different) {
                         binding.readNormalLayout.alpha = 0.01f
@@ -1239,6 +1243,10 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
                         updateFromCode = false
                         onScroll()
                     }
+
+                    // Update on every scroll frame, not only when dy == 0 or scrolling
+                    // becomes idle. Otherwise the indicator appears frozen while reading.
+                    updateChapterReadingProgress()
 
                     super.onScrolled(recyclerView, dx, dy)
 
