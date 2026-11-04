@@ -536,9 +536,9 @@ class ExtensionJsRuntimeTest {
     @Test
     fun fetchBridgeRejectsRequestsOutsideTheExtensionSite() {
         val (extension, file) = extension(
-            "var fetch = require('@libs/fetch'); " +
+            "var fetch = require('@libs/fetch'); var externalHost = 'other.example'; " +
                 "module.exports = { searchNovels: function() { " +
-                "return fetch.fetchApi('https://other.example/data').then(function(r) { return r.json(); }); } };"
+                "return fetch.fetchApi('https://' + externalHost + '/data').then(function(r) { return r.json(); }); } };"
         )
         try {
             val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]")
