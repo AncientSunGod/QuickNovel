@@ -58,6 +58,7 @@ object ExtensionJsRuntime {
         "setPluginSetting",
         "getPluginFilters",
         "transformChapterHtml",
+        "getImageRequestInit",
     )
 
     data class ExecutionResult(val json: String)
@@ -787,6 +788,10 @@ object ExtensionJsRuntime {
                   var plugin = exported && (exported.default || exported);
                   if (!plugin) throw new Error('Bundle does not export a plugin object.');
                   var args = JSON.parse(__qnArgumentsJson);
+
+                  if (__qnOperation === 'getImageRequestInit') {
+                    return JSON.stringify(plugin.imageRequestInit || {});
+                  }
 
                   if (__qnOperation === 'getPluginFilters') {
                     var filterDefinitions = plugin.filters || {};
