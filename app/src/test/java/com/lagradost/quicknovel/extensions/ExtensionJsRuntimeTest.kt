@@ -779,4 +779,23 @@ class ExtensionJsRuntimeTest {
             file.delete()
         }
     }
+    @Test
+    fun providesWhatwgUrlGlobalForLnReaderBundles() {
+        val (extension, file) = extension(
+            "module.exports = { searchNovels: function() { " +
+                "var url = new URL('/popular?page=2', 'https://example.com/catalog/index'); " +
+                "return [{name:url.hostname, path:url.pathname, cover:url.searchParams.get('page'), " +
+                "absolute:new URL('https://cdn.example.com/a').origin}]; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals(
+                """[{"name":"example.com","path":"/popular","cover":"2","absolute":"https://cdn.example.com"}]""",
+                result.json,
+            )
+        } finally {
+            file.delete()
+        }
+    }
+
 }
