@@ -641,13 +641,20 @@ object ExtensionJsRuntime {
                     }
                     if (name === '@libs/defaultCover') return {defaultCover: ''};
                     if (name === '@libs/novelStatus') return {
-                      NovelStatus: {Ongoing:'ongoing', Completed:'completed', Paused:'paused', Dropped:'dropped'}
+                      NovelStatus: {
+                        Unknown:'Unknown', Ongoing:'Ongoing', Completed:'Completed',
+                        Licensed:'Licensed', PublishingFinished:'Publishing Finished',
+                        Cancelled:'Cancelled', OnHiatus:'On Hiatus', STUB:'STUB',
+                        Inactive:'Inactive',
+                        // Backwards-compatible aliases used by older published bundles.
+                        Paused:'On Hiatus', Dropped:'Cancelled'
+                      }
                     };
                     if (name === '@libs/filterInputs') return {
                       FilterTypes: {
-                        Picker:'Picker', CheckboxGroup:'CheckboxGroup',
-                        ExcludableCheckboxGroup:'ExcludableCheckboxGroup',
-                        Switch:'Switch', TextInput:'TextInput', Input:'Input'
+                        Picker:'Picker', CheckboxGroup:'Checkbox',
+                        ExcludableCheckboxGroup:'XCheckbox',
+                        Switch:'Switch', TextInput:'Text', Input:'Text'
                       }
                     };
                     throw new Error("Unsupported LNReader module import: " + name);
