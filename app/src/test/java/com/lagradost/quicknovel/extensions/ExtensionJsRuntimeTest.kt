@@ -591,7 +591,7 @@ class ExtensionJsRuntimeTest {
             .use { it.readText() }
         val (extension, file) = extension(source)
         try {
-            val result = ExtensionJsRuntime.execute(
+            val execution = ExtensionJsRuntime.execute(
                 extension = extension.copy(site = "https://1stkissnovel.org"),
                 operation = "searchNovels",
                 argumentsJson = """["sample",1]""",
@@ -614,7 +614,9 @@ class ExtensionJsRuntimeTest {
                         """.trimIndent(),
                     )
                 },
-            ).getOrThrow()
+            )
+            assertTrue(execution.isSuccess, execution.exceptionOrNull()?.stackTraceToString() ?: "FirstKissNovel execution failed")
+            val result = execution.getOrThrow()
             val items = org.json.JSONArray(result.json)
             assertEquals(1, items.length())
             assertEquals("Sample Novel", items.getJSONObject(0).getString("name"))
