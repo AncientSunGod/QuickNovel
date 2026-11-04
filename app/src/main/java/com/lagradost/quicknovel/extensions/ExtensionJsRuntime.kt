@@ -105,8 +105,7 @@ object ExtensionJsRuntime {
                 ScriptableObject.getProperty(scope, "module") as Scriptable,
                 "exports"
             ))
-            val approvedHost = URI(extension.site).host?.lowercase()?.trimEnd('.')
-                ?: throw IllegalArgumentException("Extension site URL is invalid.")
+            val approvedHosts = approvedHostsForBundle(extension.site, source)
             var fetchCount = 0
             val fetchFunction = object : BaseFunction() {
                 override fun call(
@@ -161,7 +160,7 @@ object ExtensionJsRuntime {
                         method = method,
                         body = requestBody,
                         headers = requestHeaders,
-                        allowedHosts = setOf(approvedHost),
+                        allowedHosts = approvedHosts,
                         responseEncoding = responseEncoding,
                     ).getOrThrow()
                     val responseJson = JSONObject()
@@ -883,6 +882,23 @@ object ExtensionJsRuntime {
         val parsedResult = org.json.JSONTokener(output).nextValue()
         require(parsedResult != null) { "Extension returned invalid JSON." }
         ExecutionResult(output)
+    }
+
+    internal fun approvedHostsForBundle(site: String, source: String): Set<String> {
+        val siteHost = URI(site).host?.lowercase()?.trimEnd('.')
+            ?: throw IllegalArgumentException("Extension site URL is invalid.")
+        val hosts = linkedSetOf(siteHost)
+        val literalUrl = Regex("""https?://[A-Za-z0-9.-]+(?::[0-9]{1,5})?""", RegexOption.IGNORE_CASE)
+        literalUrl.findAll(source).forEach { match ->
+            runCatching {
+                URI(match.value).host
+                    ?.lowercase()
+                    ?.trimEnd('.')
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(hosts::add)
+            }
+        }
+        return hosts
     }
 
     private fun encodeBase64(bytes: ByteArray): String {
