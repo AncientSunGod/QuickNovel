@@ -416,6 +416,84 @@ class ExtensionJsRuntimeTest {
 
 
     @Test
+    fun exposesCurrentChikariFilterDefinitionsToTheAdapter() {
+        val source = javaClass.getResourceAsStream("/lnreader/chikari.js")!!
+            .bufferedReader()
+            .use { it.readText() }
+        val (extension, file) = extension(source)
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension = extension.copy(site = "https://chikari.moe"),
+                operation = "getPluginFilters",
+                argumentsJson = "[]",
+            ).getOrThrow()
+            val filters = org.json.JSONObject(result.json)
+            assertEquals("Picker", filters.getJSONObject("sort").getString("type"))
+            assertEquals("popular", filters.getJSONObject("sort").getString("value"))
+            assertEquals("XCheckbox", filters.getJSONObject("genres").getString("type"))
+            assertEquals(30, filters.getJSONObject("genres").getJSONArray("options").length())
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun executesCurrentChikariPopularListingWithPickerAndGenreFilters() {
+        val source = javaClass.getResourceAsStream("/lnreader/chikari.js")!!
+            .bufferedReader()
+            .use { it.readText() }
+        val (extension, file) = extension(source)
+        try {
+            val options = org.json.JSONObject()
+                .put("showLatestNovels", false)
+                .put(
+                    "filters",
+                    org.json.JSONObject()
+                        .put(
+                            "sort",
+                            org.json.JSONObject()
+                                .put("type", "Picker")
+                                .put("value", "trending"),
+                        )
+                        .put(
+                            "genres",
+                            org.json.JSONObject()
+                                .put("type", "XCheckbox")
+                                .put(
+                                    "value",
+                                    org.json.JSONObject()
+                                        .put("include", org.json.JSONArray().put("fantasy"))
+                                        .put("exclude", org.json.JSONArray().put("horror")),
+                                ),
+                        ),
+                )
+            val result = ExtensionJsRuntime.execute(
+                extension = extension.copy(site = "https://chikari.moe"),
+                operation = "popularNovels",
+                argumentsJson = org.json.JSONArray().put(1).put(options).toString(),
+                testFetchOverride = { url ->
+                    assertEquals(
+                        "https://chikari.moe/api/series?type=novel&sort=trending&genre=fantasy&genre_exclude=horror&limit=60&offset=0",
+                        url,
+                    )
+                    ExtensionHttpClient.TextResponse(
+                        url,
+                        200,
+                        "application/json",
+                        """{"items":[{"title":"Filtered Novel","slug":"filtered-novel","cover_url":"https://chikari.moe/filtered.jpg"}]}""",
+                    )
+                },
+            ).getOrThrow()
+            val items = JSONArray(result.json)
+            assertEquals(1, items.length())
+            assertEquals("Filtered Novel", items.getJSONObject(0).getString("name"))
+            assertEquals("filtered-novel", items.getJSONObject(0).getString("path"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun executesRealChikariNovelDetailsAndChapterOperations() {
         val source = javaClass.getResourceAsStream("/lnreader/chikari.js")!!
             .bufferedReader()
