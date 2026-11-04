@@ -457,7 +457,7 @@ data class TextReplacementRule(
     val replace: String,
 )
 
-const TEXT_REPLACEMENTS_KEY = "reader_text_replacements"
+private const val TEXT_REPLACEMENTS_KEY = "reader_text_replacements"
 
 data class ChapterUpdate(
     val data: ArrayList<SpanDisplay>,
@@ -997,17 +997,11 @@ class ReadActivityViewModel : ViewModel() {
     }
 
     private fun applyTextReplacements(
+        rendered: Spanned,
         input: ArrayList<TextSpan>
-    ): Pair<SpannableStringBuilder, ArrayList<TextSpan>> {
+    ): Pair<Spanned, ArrayList<TextSpan>> {
         val rules = getTextReplacements()
-        if (rules.isEmpty()) {
-            val builder = SpannableStringBuilder()
-            input.forEach { span ->
-                builder.append(span.text)
-                builder.append('\n')
-            }
-            return builder to input
-        }
+        if (rules.isEmpty()) return rendered to input
 
         val builder = SpannableStringBuilder()
         val output = ArrayList<TextSpan>(input.size)
