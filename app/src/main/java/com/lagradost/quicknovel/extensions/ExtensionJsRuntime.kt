@@ -322,7 +322,8 @@ object ExtensionJsRuntime {
                   };
                   this.Promise = QNPromise;
                   this.require = function(name) {
-                    if (name === '@libs/fetch') return {
+                    if (name === '@libs/fetch') {
+                      var fetchModule = {
                       fetchApi: function(url, init, responseEncoding) {
                         var method = init && init.method ? String(init.method).toUpperCase() : 'GET';
                         if (method !== 'GET' && method !== 'POST')
@@ -366,7 +367,7 @@ object ExtensionJsRuntime {
                       },
                       fetchText: function(url, init, encoding) {
                         try {
-                          return this.fetchApi(url, init, encoding).then(function(response) {
+                          return fetchModule.fetchApi(url, init, encoding).then(function(response) {
                             return response.ok ? response.text() : '';
                           }).catch(function() { return ''; });
                         } catch (error) {
@@ -374,6 +375,9 @@ object ExtensionJsRuntime {
                         }
                       }
                     };
+                    fetchModule.default = fetchModule;
+                    return fetchModule;
+                    }
                     if (name === 'cheerio') {
                       function call(command, id, value, index) {
                         return JSON.parse(__qnHtml(command, id, value == null ? '' : String(value), index == null ? '' : index));
