@@ -47,7 +47,7 @@ class ExtensionMainAPI internal constructor(
                 val key = keys.next().trim().take(100)
                 val value = headers.optString(key, "").take(2_000)
                 if (key.lowercase() in allowed && value.isNotBlank() &&
-                    !value.contains('\r') && !value.contains('\n')
+                if (key.lowercase() in allowed && value.isNotBlank() && value.none { it.code == 10 || it.code == 13 }) {
                 ) {
                     put(key, value)
                 }
