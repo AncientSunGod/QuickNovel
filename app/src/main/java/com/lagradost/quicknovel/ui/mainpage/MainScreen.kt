@@ -25,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -194,6 +195,32 @@ fun MainPageScreen(state: MainPageState, action: (MainPageAction) -> Unit) {
                                 }
                             }
                         ) {
+                            Text("Retry")
+                        }
+                    }
+                }
+            }
+
+            // Keep a pagination failure visible when earlier pages already loaded.
+            // Otherwise the grid remains on screen and the failure is only a brief toast.
+            if (!state.openQuery && !visibleLoading && visibleItems.isNotEmpty() && visibleError != null) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = visibleError.message ?: "Could not load more novels.",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Button(onClick = { action(MainPageAction.Expand) }) {
                             Text("Retry")
                         }
                     }
