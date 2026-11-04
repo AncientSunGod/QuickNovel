@@ -111,8 +111,7 @@ class ExtensionMainAPI internal constructor(
         var previousPageKey: List<String>? = null
 
         for (page in 1..MAX_SEARCH_PAGES) {
-            val json = execute("searchNovels", JSONArray().put(query).put(page))
-                ?: if (!receivedAnyPage) return@withContext null else break
+            val json = executeRequired("searchNovels", JSONArray().put(query).put(page))
             receivedAnyPage = true
             val results = mapSearchItems(json)
             val pageKey = results.map { it.url }
@@ -138,10 +137,10 @@ class ExtensionMainAPI internal constructor(
         val options = JSONObject()
             .put("showLatestNovels", orderBy?.contains("latest", ignoreCase = true) == true)
             .put("filters", buildFilterValues(mainCategory, orderBy, tag))
-        val json = execute("popularNovels", JSONArray().put(page).put(options))
+        val json = executeRequired("popularNovels", JSONArray().put(page).put(options))
         HeadMainPageResponse(
             url = mainUrl,
-            list = json?.let(::mapSearchItems).orEmpty(),
+            list = mapSearchItems(json),
         )
     }
 
@@ -265,7 +264,7 @@ class ExtensionMainAPI internal constructor(
 
     override suspend fun load(url: String): StreamResponse? = withContext(Dispatchers.IO) {
         val path = extractPluginPath(url) ?: return@withContext null
-        val raw = execute("parseNovel", JSONArray().put(path)) ?: return@withContext null
+        val raw = executeRequired("parseNovel", JSONArray().put(path))
         val novel = JSONObject(raw)
         loadAdditionalChapterPages(path, novel)
         novel.put("url", url)
@@ -290,7 +289,7 @@ class ExtensionMainAPI internal constructor(
 
     override suspend fun loadHtml(url: String): String? = withContext(Dispatchers.IO) {
         val path = extractPluginPath(url) ?: return@withContext null
-        val result = execute("parseChapter", JSONArray().put(path)) ?: return@withContext null
+        val result = executeRequired("parseChapter", JSONArray().put(path))
         var html = runCatching { JSONTokener(result).nextValue() as? String }.getOrNull()
             ?: return@withContext null
 
@@ -340,6 +339,35 @@ class ExtensionMainAPI internal constructor(
                 storageContext = context,
                 testRequestOverride = testRequestOverride,
             ).getOrNull()?.json
+
+    /**
+     * Required provider operations must not silently turn runtime failures into empty pages.
+     * Returning an empty list is valid; failing to execute the extension is not. Propagating
+     * the cause lets the provider screen show a useful error instead of appearing as a blank page.
+     */
+    private fun executeRequired(operation: String, args: JSONArray): String {
+        val result = if (operationOverride != null) {
+            operationOverride.invoke(operation, args)
+        } else {
+            ExtensionJsRuntime.execute(
+                extension = extension,
+                operation = operation,
+                argumentsJson = args.toString(),
+                testFetchOverride = testFetchOverride,
+                storageContext = context,
+                testRequestOverride = testRequestOverride,
+            ).getOrElse { error ->
+                throw IllegalStateException(
+                    "LNReader extension '" + name + "' failed during " + operation + ": " +
+                        (error.message ?: error.javaClass.simpleName),
+                    error,
+                )
+            }.json
+        }
+        return result ?: throw IllegalStateException(
+            "LNReader extension '" + name + "' returned no result for " + operation + ".",
+        )
+    }
 
     private fun resolvePath(path: String): String {
         if (path.startsWith("https://", true) || path.startsWith("http://", true)) return path
