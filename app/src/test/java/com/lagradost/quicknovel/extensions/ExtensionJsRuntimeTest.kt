@@ -127,6 +127,27 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun executesLnReaderCustomJavaScriptAgainstChapterCheerioDocument() {
+        val (extension, file) = extension(
+            "module.exports = { searchNovels: function() { return []; } };"
+        )
+        try {
+            val html = """<div><p class="promo">Advertisement</p><p>Chapter text</p></div>"""
+            val result = ExtensionJsRuntime.execute(
+                extension = extension,
+                operation = "transformChapterHtml",
+                argumentsJson = JSONArray().put(html).toString(),
+                customScript = "loadedCheerio('.promo').remove();",
+            ).getOrThrow()
+            val transformed = org.json.JSONTokener(result.json).nextValue() as String
+            assertTrue(!transformed.contains("Advertisement"))
+            assertTrue(transformed.contains("Chapter text"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun supportsCommonCheerioLoadSelectTextAndAttributeCalls() {
         val (extension, file) = extension(
             "var cheerio = require('cheerio'); " +
