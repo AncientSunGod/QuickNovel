@@ -780,6 +780,27 @@ class ExtensionJsRuntimeTest {
         }
     }
     @Test
+    fun keepsUrlHrefSynchronizedWhenSearchParamsChange() {
+        val (extension, file) = extension(
+            "module.exports = { searchNovels: function() { " +
+                "var url = new URL('/search?old=1&keep=yes', 'https://example.com/'); " +
+                "url.searchParams.set('page', '2'); " +
+                "url.searchParams.append('tag', 'science fiction'); " +
+                "url.searchParams.delete('old'); " +
+                "return [{name:url.href, path:url.search, cover:url.searchParams.get('page')}]; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            val item = JSONArray(result.json).getJSONObject(0)
+            assertEquals("https://example.com/search?keep=yes&page=2&tag=science+fiction", item.getString("name"))
+            assertEquals("?keep=yes&page=2&tag=science+fiction", item.getString("path"))
+            assertEquals("2", item.getString("cover"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun providesWhatwgUrlGlobalForLnReaderBundles() {
         val (extension, file) = extension(
             "module.exports = { searchNovels: function() { " +
