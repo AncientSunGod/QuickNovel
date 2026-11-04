@@ -1133,6 +1133,7 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
                 }
 
                 is Resource.Loading -> {
+                    binding.readOverflowProgress.isVisible = false
                     binding.readNormalLayout.isVisible = false
                     binding.readFail.isVisible = false
                     binding.readLoading.isVisible = true
@@ -1143,6 +1144,7 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
                 }
 
                 is Resource.Failure -> {
+                    binding.readOverflowProgress.isVisible = false
                     binding.readLoading.isVisible = false
                     binding.readFail.isVisible = true
                     binding.failText.text = loading.errorString
