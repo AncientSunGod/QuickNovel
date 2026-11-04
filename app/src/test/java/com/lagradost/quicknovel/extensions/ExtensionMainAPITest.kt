@@ -207,7 +207,7 @@ class ExtensionMainAPITest {
                         "https://chikari.moe/api/novels/sample-novel/chapters/1/read" ->
                             ExtensionHttpClient.TextResponse(
                                 url, 200, "application/json",
-                                """{"body":"First paragraph\\nSecond paragraph"}""",
+                                """{"body":"First paragraph\nSecond paragraph"}""",
                             )
                         else -> throw AssertionError("Unexpected Chikari adapter request: $url")
                     }
