@@ -382,6 +382,49 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun keepsSessionStorageOnlyForTheCurrentExtensionSession() {
+        val (extension, file) = extension(
+            "var session = require('@libs/storage').sessionStorage; " +
+                "module.exports = { searchNovels: function() { " +
+                "session.setItem('token','temporary'); " +
+                "return [{name:session.getItem('token')}]; } };"
+        )
+        val readExtension = extension.copy(
+            bundlePath = file.absolutePath,
+            id = extension.id,
+        )
+        val reader = File.createTempFile("quicknovel-session-reader-", ".js")
+        reader.writeText(
+            "var session = require('@libs/storage').sessionStorage; " +
+                "module.exports = { searchNovels: function() { " +
+                "return [{name:session.getItem('token')}]; } };"
+        )
+        try {
+            val write = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("temporary", JSONArray(write.json).getJSONObject(0).getString("name"))
+
+            val read = ExtensionJsRuntime.execute(
+                extension = readExtension.copy(bundlePath = reader.absolutePath),
+                operation = "searchNovels",
+                argumentsJson = "[]",
+            ).getOrThrow()
+            assertEquals("temporary", JSONArray(read.json).getJSONObject(0).getString("name"))
+
+            ExtensionJsRuntime.clearSessionStorage(extension.id)
+            val afterClear = ExtensionJsRuntime.execute(
+                extension = readExtension.copy(bundlePath = reader.absolutePath),
+                operation = "searchNovels",
+                argumentsJson = "[]",
+            ).getOrThrow()
+            assertTrue(JSONArray(afterClear.json).getJSONObject(0).isNull("name"))
+        } finally {
+            file.delete()
+            reader.delete()
+            ExtensionJsRuntime.clearSessionStorage(extension.id)
+        }
+    }
+
+    @Test
     fun exposesStorageHelperMethodsToBundles() {
         val (extension, file) = extension(
             "var helpers = require('@libs/storage'); var store = helpers.storage; " +
