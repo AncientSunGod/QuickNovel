@@ -353,6 +353,22 @@
                     android:text="@string/reader_font"
                     app:icon="@drawable/ic_baseline_font_download_24" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/read_import_font"
+                    style="@style/BlackButton"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/import_custom_font"
+                    app:icon="@drawable/ic_baseline_font_download_24" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/read_text_replacements"
+                    style="@style/BlackButton"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/custom_text_replacements"
+                    app:icon="@drawable/ic_outline_settings_24" />
+
                 <TextView
                     android:id="@+id/read_settings_text_size_text"
                     android:layout_width="wrap_content"
