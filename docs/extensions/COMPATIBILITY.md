@@ -16,6 +16,8 @@ https://raw.githubusercontent.com/LNReader/lnreader-plugins/plugins/v3.0.0/.dist
 
 After refreshing the catalogue, choose an extension and install it. Installed extensions appear separately in the installed list, where they can be configured (when they declare settings) or uninstalled. Newly installed providers are added to the active provider list and their language is enabled once.
 
+The language adapter recognizes the published v3 manifest's localized labels: Arabic, Bengali, Chinese, English, French, Indonesian, Japanese, Korean, Polish, Portuguese, Russian, Spanish, Thai, Turkish, Ukrainian, Vietnamese, and Multi (mapped to English so it remains visible with the default English provider filter).
+
 ## Provider flow
 
 The QuickNovel adapter connects supported LNReader operations to the app's native provider interface:
