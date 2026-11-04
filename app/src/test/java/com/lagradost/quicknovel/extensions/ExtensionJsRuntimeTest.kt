@@ -318,13 +318,15 @@ class ExtensionJsRuntimeTest {
     @Test
     fun exposesStorageHelperMethodsToBundles() {
         val (extension, file) = extension(
-            "var store = require('@libs/storage').storage; " +
+            "var helpers = require('@libs/storage'); var store = helpers.storage; " +
                 "module.exports = { searchNovels: function() { " +
-                "return [{name:typeof store.get,path:typeof store.set}]; } };"
+                "return [{name:typeof store.get,path:typeof store.set," +
+                "latestChapter:typeof helpers.localStorage.getItem," +
+                "cover:typeof helpers.sessionStorage.setItem}]; } };"
         )
         try {
             val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
-            assertEquals("""[{"name":"function","path":"function"}]""", result.json)
+            assertEquals("""[{"name":"function","path":"function","latestChapter":"function","cover":"function"}]""", result.json)
         } finally {
             file.delete()
         }
