@@ -111,7 +111,7 @@ object ExtensionHttpClient {
                 }
 
                 val status = connection.responseCode
-                if (status in 300..399) {
+                if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
                     val location = connection.getHeaderField("Location")
                         ?: throw IllegalStateException("Extension request returned a redirect without a location.")
                     if (redirectIndex >= MAX_REDIRECTS) {
