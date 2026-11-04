@@ -9,6 +9,7 @@ import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 import org.jsoup.nodes.DataNode
+import org.jsoup.nodes.Comment
 import org.mozilla.javascript.BaseFunction
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.ContextFactory
@@ -816,7 +817,7 @@ object ExtensionJsRuntime {
         private val maxSelections = 2_000
         private var nextId = 1
         private val documents = mutableMapOf<Int, Document>()
-        private val selections = mutableMapOf<Int, List<Element>>()
+        private val selections = mutableMapOf<Int, List<Node>>()
 
         fun parseEvents(html: String): String {
             require(html.length <= maxHtmlChars) { "HTML input exceeds the 2 MB limit." }
@@ -853,6 +854,7 @@ object ExtensionJsRuntime {
         }
 
         fun invoke(command: String, selectionId: Int, value: String?, index: Int?): String {
+            val nodes = selections[selectionId].orEmpty()
             val result: Any? = when (command) {
                 "load" -> {
                     val html = value.orEmpty()
@@ -868,48 +870,56 @@ object ExtensionJsRuntime {
                         "CSS selector is empty or too long."
                     }
                     val found = documents[selectionId]?.select(selector)
-                        ?: selections[selectionId].orEmpty().flatMap { parent ->
+                        ?: nodes.filterIsInstance<Element>().flatMap { parent ->
                             parent.select(selector).filterNot { it === parent }
                         }
-                    store(found)
+                    storeNodes(found)
                 }
                 "find" -> {
                     val selector = value.orEmpty()
                     require(selector.isNotBlank() && selector.length <= maxSelectorChars) {
                         "CSS selector is empty or too long."
                     }
-                    store(selections[selectionId].orEmpty().flatMap { parent ->
+                    storeNodes(nodes.filterIsInstance<Element>().flatMap { parent ->
                         parent.select(selector).filterNot { it === parent }
                     })
                 }
                 "children" -> {
                     val selector = value.orEmpty()
                     require(selector.length <= maxSelectorChars) { "CSS selector is too long." }
-                    val children = selections[selectionId].orEmpty().flatMap { it.children() }
-                    store(if (selector.isBlank()) children else children.filter { it.`is`(selector) })
+                    val children = nodes.filterIsInstance<Element>().flatMap { it.children() }
+                    storeNodes(if (selector.isBlank()) children else children.filter { it.`is`(selector) })
                 }
-                "parent" -> store(selections[selectionId].orEmpty().mapNotNull { it.parent() }.distinct())
-                "next" -> store(selections[selectionId].orEmpty().mapNotNull { it.nextElementSibling() })
-                "prev" -> store(selections[selectionId].orEmpty().mapNotNull { it.previousElementSibling() })
-                "first" -> store(selections[selectionId].orEmpty().take(1))
-                "last" -> store(selections[selectionId].orEmpty().takeLast(1))
+                "contents" -> storeNodes(
+                    (documents[selectionId]?.let { listOf(it as Node) } ?: nodes)
+                        .flatMap { it.childNodes() }
+                )
+                "parent" -> storeNodes(nodes.mapNotNull { it.parentNode() }.distinct())
+                "next" -> storeNodes(nodes.filterIsInstance<Element>().mapNotNull { it.nextElementSibling() })
+                "prev" -> storeNodes(nodes.filterIsInstance<Element>().mapNotNull { it.previousElementSibling() })
+                "nextNode" -> storeNodes(nodes.firstOrNull()?.let { sibling(it, 1) }?.let(::listOf).orEmpty())
+                "first" -> storeNodes(nodes.take(1))
+                "last" -> storeNodes(nodes.takeLast(1))
                 "eq" -> {
-                    val elements = selections[selectionId].orEmpty()
                     val requested = index ?: 0
-                    val resolved = if (requested < 0) elements.size + requested else requested
-                    store(elements.getOrNull(resolved)?.let { listOf(it) }.orEmpty())
+                    val resolved = if (requested < 0) nodes.size + requested else requested
+                    storeNodes(nodes.getOrNull(resolved)?.let { listOf(it) }.orEmpty())
                 }
-                "length" -> documents[selectionId]?.let { 1 } ?: selections[selectionId].orEmpty().size
+                "nodeType" -> nodes.firstOrNull()?.let(::nodeType)
+                "nodeData" -> nodes.firstOrNull()?.let(::nodeData)
+                "length" -> documents[selectionId]?.let { 1 } ?: nodes.size
                 "text" -> documents[selectionId]?.text()?.take(100_000)
-                    ?: selections[selectionId].orEmpty().joinToString("") { it.text() }.take(100_000)
+                    ?: nodes.joinToString("") { nodeText(it) }.take(100_000)
                 "html" -> documents[selectionId]?.html()?.take(100_000)
-                    ?: selections[selectionId].orEmpty().firstOrNull()?.html()?.take(100_000).orEmpty()
-                "attr" -> selections[selectionId].orEmpty().firstOrNull()?.let { element ->
+                    ?: nodes.firstOrNull()?.let { node ->
+                        if (node is Element) node.html().take(100_000) else node.outerHtml().take(100_000)
+                    }.orEmpty()
+                "attr" -> nodes.filterIsInstance<Element>().firstOrNull()?.let { element ->
                     value?.let { if (element.hasAttr(it)) element.attr(it).take(100_000) else null }
                 }
-                "hasClass" -> selections[selectionId].orEmpty().firstOrNull()?.hasClass(value.orEmpty()) ?: false
+                "hasClass" -> nodes.filterIsInstance<Element>().firstOrNull()?.hasClass(value.orEmpty()) ?: false
                 "remove" -> {
-                    selections[selectionId].orEmpty().forEach { it.remove() }
+                    nodes.forEach { it.remove() }
                     selectionId
                 }
                 else -> throw IllegalArgumentException("Unsupported HTML selector operation.")
@@ -922,10 +932,40 @@ object ExtensionJsRuntime {
             }
         }
 
-        private fun store(elements: List<Element>): Int {
+        private fun nodeType(node: Node): String = when (node) {
+            is Element -> "tag"
+            is TextNode, is DataNode -> "text"
+            is Comment -> "comment"
+            else -> "root"
+        }
+
+        private fun nodeData(node: Node): String? = when (node) {
+            is TextNode -> node.getWholeText()
+            is DataNode -> node.getWholeData()
+            is Comment -> node.getData()
+            else -> null
+        }
+
+        private fun nodeText(node: Node): String = when (node) {
+            is Element -> node.text()
+            is TextNode -> node.getWholeText()
+            is DataNode -> node.getWholeData()
+            is Comment -> node.getData()
+            else -> ""
+        }
+
+        private fun sibling(node: Node, offset: Int): Node? {
+            val siblings = node.parentNode()?.childNodes().orEmpty()
+            val current = siblings.indexOf(node)
+            return if (current < 0) null else siblings.getOrNull(current + offset)
+        }
+
+        private fun store(elements: List<Element>): Int = storeNodes(elements)
+
+        private fun storeNodes(nodes: List<Node>): Int {
             require(selections.size < maxSelections) { "Extension exceeded the HTML selection limit." }
             val id = nextId++
-            selections[id] = elements.take(maxResults)
+            selections[id] = nodes.take(maxResults)
             return id
         }
     }
