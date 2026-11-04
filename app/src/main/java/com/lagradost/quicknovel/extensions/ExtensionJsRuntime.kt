@@ -127,9 +127,14 @@ object ExtensionJsRuntime {
                     args: Array<out Any>,
                 ): Any {
                     val command = args.getOrNull(0)?.toString().orEmpty()
-                    val selectionId = args.getOrNull(1)?.toString()?.toIntOrNull() ?: 0
+                    val selectionIdArg = args.getOrNull(1)
+                    val selectionId = (selectionIdArg as? Number)?.toInt()
+                        ?: selectionIdArg?.toString()?.toIntOrNull()
+                        ?: 0
                     val value = args.getOrNull(2)?.toString()
-                    val index = args.getOrNull(3)?.toString()?.toIntOrNull()
+                    val indexArg = args.getOrNull(3)
+                    val index = (indexArg as? Number)?.toInt()
+                        ?: indexArg?.toString()?.toIntOrNull()
                     return htmlBridge.invoke(command, selectionId, value, index)
                 }
             }
