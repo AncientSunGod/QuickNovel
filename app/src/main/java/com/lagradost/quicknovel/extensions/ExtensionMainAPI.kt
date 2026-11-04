@@ -33,6 +33,27 @@ class ExtensionMainAPI internal constructor(
     override val name: String = extension.name
     override val mainUrl: String = extension.site.trimEnd('/')
     override val lang: String = normalizeLanguage(extension.language)
+    private val imageRequestHeaders: Map<String, String>? by lazy {
+        val raw = execute("getImageRequestInit", JSONArray()) ?: return@lazy null
+        val headers = runCatching { JSONObject(raw).optJSONObject("headers") }.getOrNull()
+            ?: return@lazy null
+        val allowed = setOf(
+            "accept", "accept-language", "authorization", "cookie", "origin",
+            "referer", "referrer", "user-agent", "x-requested-with",
+        )
+        buildMap {
+            val keys = headers.keys()
+            while (keys.hasNext()) {
+                val key = keys.next().trim().take(100)
+                val value = headers.optString(key, "").take(2_000)
+                if (key.lowercase() in allowed && value.isNotBlank() &&
+                    !value.contains('\\r') && !value.contains('\\n')
+                ) {
+                    put(key, value)
+                }
+            }
+        }.takeIf { it.isNotEmpty() }
+    }
     private val pluginFilterResponse: JSONObject by lazy {
         execute("getPluginFilters", JSONArray())?.let { runCatching { JSONObject(it) }.getOrNull() }
             ?: JSONObject()
@@ -215,6 +236,7 @@ class ExtensionMainAPI internal constructor(
                         posterUrl = poster,
                         latestChapter = item.text("latestChapter").takeIf { it.isNotBlank() },
                         apiName = name,
+                        posterHeaders = imageRequestHeaders,
                     )
                 )
             }
@@ -242,6 +264,7 @@ class ExtensionMainAPI internal constructor(
             apiName = name,
             baseUrl = "$mainUrl/",
             requestedUrl = url,
+            posterHeaders = imageRequestHeaders,
         )
     }
 
