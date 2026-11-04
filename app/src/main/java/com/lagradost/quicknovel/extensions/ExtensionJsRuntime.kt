@@ -194,11 +194,19 @@ object ExtensionJsRuntime {
                     val rawValue = args.getOrNull(2)?.toString().orEmpty()
                     val expires = args.getOrNull(3)?.toString()?.toLongOrNull()
                     val raw = args.getOrNull(4)?.toString().equals("true", ignoreCase = true)
+                    val area = args.getOrNull(5)?.toString().orEmpty()
+                    require(area.isEmpty() || area == "local" || area == "session") {
+                        "Unsupported extension storage area."
+                    }
                     val prefs = storageContext?.getSharedPreferences(
                         "quicknovel_extension_storage_${extension.id}",
                         AndroidContext.MODE_PRIVATE,
                     ) ?: throw IllegalStateException("Extension storage requires an app context.")
-                    val prefix = "entry_"
+                    val prefix = when (area) {
+                        "local" -> "local_"
+                        "session" -> "session_"
+                        else -> "entry_"
+                    }
                     val output = when (command) {
                         "set" -> {
                             require(key.length <= 500) { "Extension storage key is too long." }
@@ -443,9 +451,10 @@ object ExtensionJsRuntime {
                       return {Parser:Parser,default:{Parser:Parser}};
                     }
                     if (name === '@libs/storage') {
-                      function call(command, key, value, expires, raw) {
+                      function call(command, key, value, expires, raw, area) {
                         return JSON.parse(__qnStorage(command, String(key == null ? '' : key),
-                          value == null ? '' : String(value), expires == null ? '' : String(expires), raw ? 'true' : 'false'));
+                          value == null ? '' : String(value), expires == null ? '' : String(expires),
+                          raw ? 'true' : 'false', area || ''));
                       }
                       var storage = {
                         set: function(key, value, expires) {
@@ -460,8 +469,39 @@ object ExtensionJsRuntime {
                         clearAll: function() { return call('clearAll'); },
                         getAllKeys: function() { return call('getAllKeys'); }
                       };
-                      var readOnlyStorage = {get:function(){return undefined;}};
-                      return {storage:storage,localStorage:readOnlyStorage,sessionStorage:readOnlyStorage};
+                      function createWebStorage(area) {
+                        var webStorage = {
+                          getItem: function(key) {
+                            var value = call('get', key, '', '', false, area);
+                            return value == null ? null : String(value);
+                          },
+                          setItem: function(key, value) {
+                            call('set', key, JSON.stringify(String(value)), '', false, area);
+                          },
+                          removeItem: function(key) { call('delete', key, '', '', false, area); },
+                          clear: function() { call('clearAll', '', '', '', false, area); },
+                          key: function(index) {
+                            var keys = call('getAllKeys', '', '', '', false, area);
+                            return keys[index] == null ? null : keys[index];
+                          },
+                          get: function(key) {
+                            var value = call('get', key, '', '', false, area);
+                            return value == null ? undefined : value;
+                          },
+                          set: function(key, value) {
+                            call('set', key, JSON.stringify(String(value)), '', false, area);
+                          }
+                        };
+                        Object.defineProperty(webStorage, 'length', {
+                          get: function() { return call('getAllKeys', '', '', '', false, area).length; }
+                        });
+                        return webStorage;
+                      }
+                      return {
+                        storage: storage,
+                        localStorage: createWebStorage('local'),
+                        sessionStorage: createWebStorage('session')
+                      };
                     }
                     if (name === 'dayjs') {
                       var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
