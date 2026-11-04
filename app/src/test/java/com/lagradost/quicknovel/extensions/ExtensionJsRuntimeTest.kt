@@ -87,7 +87,7 @@ class ExtensionJsRuntimeTest {
             ).getOrThrow()
             assertTrue(result.json.contains("\"name\":\"sample\""))
             assertTrue(result.json.contains("\"filter\":\"Picker\""))
-            assertTrue(result.json.contains("\"status\":\"ongoing\""))
+            assertTrue(result.json.contains("\"status\":\"Ongoing\""))
         } finally {
             file.delete()
         }
