@@ -38,6 +38,8 @@ object ExtensionJsRuntime {
         "popularNovels",
         "parsePage",
         "resolveUrl",
+        "getPluginSettings",
+        "setPluginSetting",
     )
 
     data class ExecutionResult(val json: String)
@@ -671,10 +673,68 @@ object ExtensionJsRuntime {
                 (function() {
                   var exported = module.exports;
                   var plugin = exported && (exported.default || exported);
-                  if (!plugin || typeof plugin[__qnOperation] !== 'function') {
+                  if (!plugin) throw new Error('Bundle does not export a plugin object.');
+                  var args = JSON.parse(__qnArgumentsJson);
+
+                  if (__qnOperation === 'getPluginSettings') {
+                    var definitions = plugin.pluginSettings || {};
+                    var settingsStore = require('@libs/storage').storage;
+                    var output = {};
+                    Object.keys(definitions).forEach(function(key) {
+                      var definition = definitions[key] || {};
+                      var defaultValue = definition.value;
+                      var currentValue = settingsStore.get(key);
+                      if (typeof currentValue === 'undefined') {
+                        currentValue = defaultValue;
+                        settingsStore.set(key, defaultValue);
+                      }
+                      output[key] = {
+                        label: typeof definition.label === 'string' ? definition.label : key,
+                        type: typeof definition.type === 'string' ? definition.type : 'Text',
+                        value: currentValue,
+                        options: Array.isArray(definition.options) ? definition.options : []
+                      };
+                    });
+                    return JSON.stringify(output);
+                  }
+
+                  if (__qnOperation === 'setPluginSetting') {
+                    var settingKey = String(args[0] == null ? '' : args[0]);
+                    var value = args[1];
+                    var settingDefinitions = plugin.pluginSettings || {};
+                    if (!Object.prototype.hasOwnProperty.call(settingDefinitions, settingKey)) {
+                      throw new Error('Unknown plugin setting: ' + settingKey);
+                    }
+                    var settingDefinition = settingDefinitions[settingKey] || {};
+                    var settingType = settingDefinition.type || 'Text';
+                    var options = Array.isArray(settingDefinition.options) ? settingDefinition.options : [];
+                    if (settingType === 'Text' && typeof value !== 'string') {
+                      throw new Error('Text plugin settings must be strings.');
+                    }
+                    if (settingType === 'Switch' && typeof value !== 'boolean') {
+                      throw new Error('Switch plugin settings must be booleans.');
+                    }
+                    if (settingType === 'Select' &&
+                        (typeof value !== 'string' || !options.some(function(option) { return option.value === value; }))) {
+                      throw new Error('Select plugin setting value is not one of its declared options.');
+                    }
+                    if (settingType === 'CheckboxGroup' &&
+                        (!Array.isArray(value) || value.some(function(selected) {
+                          return typeof selected !== 'string' ||
+                            !options.some(function(option) { return option.value === selected; });
+                        }))) {
+                      throw new Error('CheckboxGroup plugin setting values must be declared option strings.');
+                    }
+                    if (['Text','Switch','Select','CheckboxGroup'].indexOf(settingType) < 0) {
+                      throw new Error('Unsupported plugin setting type: ' + settingType);
+                    }
+                    require('@libs/storage').storage.set(settingKey, value);
+                    return JSON.stringify(true);
+                  }
+
+                  if (typeof plugin[__qnOperation] !== 'function') {
                     throw new Error('Bundle does not export operation: ' + __qnOperation);
                   }
-                  var args = JSON.parse(__qnArgumentsJson);
                   if (__qnOperation === 'popularNovels' && args[1] && args[1].filters &&
                       Object.keys(args[1].filters).length === 0) {
                     args[1].filters = plugin.filters || {};
