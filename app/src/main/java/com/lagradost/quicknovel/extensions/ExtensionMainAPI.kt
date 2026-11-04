@@ -26,6 +26,8 @@ import java.nio.charset.StandardCharsets
 class ExtensionMainAPI internal constructor(
     private val extension: InstalledExtension,
     private val context: Context? = null,
+    private val testFetchOverride: ((String) -> ExtensionHttpClient.TextResponse)? = null,
+    private val testRequestOverride: ((String, String, Map<String, String>, String?) -> ExtensionHttpClient.TextResponse)? = null,
     private val operationOverride: ((String, JSONArray) -> String?)? = null,
 ) : MainAPI() {
     override val name: String = extension.name
@@ -286,8 +288,14 @@ class ExtensionMainAPI internal constructor(
 
     private fun execute(operation: String, args: JSONArray): String? =
         operationOverride?.invoke(operation, args)
-            ?: ExtensionJsRuntime.execute(extension, operation, args.toString(), storageContext = context)
-                .getOrNull()?.json
+            ?: ExtensionJsRuntime.execute(
+                extension = extension,
+                operation = operation,
+                argumentsJson = args.toString(),
+                testFetchOverride = testFetchOverride,
+                storageContext = context,
+                testRequestOverride = testRequestOverride,
+            ).getOrNull()?.json
 
     private fun resolvePath(path: String): String {
         if (path.startsWith("https://", true) || path.startsWith("http://", true)) return path
