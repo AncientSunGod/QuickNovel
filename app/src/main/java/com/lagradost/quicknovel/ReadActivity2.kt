@@ -430,16 +430,22 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
     }
 
     private fun updateChapterReadingProgress() {
-        val range = binding.realText.computeVerticalScrollRange()
-        val extent = binding.realText.computeVerticalScrollExtent()
-        val offset = binding.realText.computeVerticalScrollOffset()
-        val scrollable = (range - extent).coerceAtLeast(0)
-        binding.readOverflowProgress.max = 1000
-        binding.readOverflowProgress.progress = if (scrollable == 0) {
-            if (cachedChapter.isNotEmpty()) 1000 else 0
+        val itemCount = textAdapter.itemCount
+        val firstVisible = textLayoutManager.findFirstVisibleItemPosition()
+        val firstChild = textLayoutManager.findViewByPosition(firstVisible)
+        val fractionWithinItem = if (firstChild != null && firstChild.height > 0) {
+            (-firstChild.top.toFloat() / firstChild.height.toFloat()).coerceIn(0f, 1f)
         } else {
-            ((offset.toFloat() / scrollable.toFloat()) * 1000f).toInt().coerceIn(0, 1000)
+            0f
         }
+        val chapterFraction = when {
+            itemCount <= 0 -> 0f
+            firstVisible == RecyclerView.NO_POSITION -> 0f
+            firstVisible >= itemCount - 1 && !binding.realText.canScrollVertically(1) -> 1f
+            else -> ((firstVisible + fractionWithinItem) / itemCount.toFloat()).coerceIn(0f, 1f)
+        }
+        binding.readOverflowProgress.progress = (chapterFraction * 1000f).roundToInt()
+        binding.readOverflowProgress.isVisible = true
     }
 
     fun onScroll() {
@@ -832,8 +838,16 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
         readActivity = this
         binding = ReadMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        binding.readOverflowProgress.isVisible = true
-        binding.readOverflowProgress.max = 1000
+        binding.readOverflowProgress.apply {
+            isIndeterminate = false
+            isVisible = true
+            max = 1000
+            progress = 0
+            progressTintList = ColorStateList.valueOf(ContextCompat.getColor(this@ReadActivity2, R.color.colorPrimary))
+            progressBackgroundTintList = ColorStateList.valueOf(Color.DKGRAY)
+            elevation = 12.toPx.toFloat()
+            bringToFront()
+        }
         fixSystemBarsPadding(binding.readerBottomViewHolder, padTop = false, overlayCutout = false)
         fixSystemBarsPadding(binding.readToolbarHolder, padBottom = false, overlayCutout = false)
 
