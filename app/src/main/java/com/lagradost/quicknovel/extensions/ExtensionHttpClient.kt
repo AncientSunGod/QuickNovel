@@ -4,6 +4,8 @@ import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URL
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 /**
@@ -69,6 +71,7 @@ object ExtensionHttpClient {
         body: String? = null,
         headers: Map<String, String> = emptyMap(),
         allowedHosts: Set<String>? = null,
+        responseEncoding: String? = null,
     ): Result<TextResponse> = runCatching {
         var currentUrl = validateUrl(rawUrl, allowedHosts)
         var currentMethod = method.trim().uppercase(Locale.ROOT)
@@ -96,7 +99,11 @@ object ExtensionHttpClient {
                 connection.requestMethod = currentMethod
                 connection.connectTimeout = CONNECT_TIMEOUT_MS
                 connection.readTimeout = READ_TIMEOUT_MS
-                connection.setRequestProperty("Accept", "text/html,application/json,text/plain,*/*")
+                connection.setRequestProperty("User-Agent", com.lagradost.quicknovel.USER_AGENT)
+                connection.setRequestProperty("Connection", "keep-alive")
+                connection.setRequestProperty("Accept", "*/*")
+                connection.setRequestProperty("Accept-Language", "*")
+                connection.setRequestProperty("Cache-Control", "max-age=0")
                 safeHeaders.forEach { (key, value) ->
                     if (!value.contains('\r') && !value.contains('\n')) {
                         connection.setRequestProperty(key, value)
@@ -157,7 +164,7 @@ object ExtensionHttpClient {
                         url = currentUrl,
                         statusCode = status,
                         contentType = connection.contentType,
-                        body = String(bodyBytes, Charsets.UTF_8),
+                        body = decodeText(bodyBytes, responseEncoding, connection.contentType),
                         statusText = connection.responseMessage.orEmpty(),
                         headers = responseHeaders,
                     )
@@ -167,6 +174,21 @@ object ExtensionHttpClient {
             }
         }
         throw IllegalStateException("Extension request could not be completed.")
+    }
+
+    internal fun decodeText(
+        bytes: ByteArray,
+        requestedEncoding: String? = null,
+        contentType: String? = null,
+    ): String {
+        val contentTypeEncoding = contentType
+            ?.let { Regex("""(?i)charset\\s*=\\s*["']?([^;"'\\s]+)""").find(it)?.groupValues?.getOrNull(1) }
+        val charset = sequenceOf(requestedEncoding, contentTypeEncoding)
+            .filterNotNull()
+            .mapNotNull { name -> runCatching { Charset.forName(name.trim()) }.getOrNull() }
+            .firstOrNull()
+            ?: StandardCharsets.UTF_8
+        return String(bytes, charset)
     }
 
     private fun validateUrl(value: String, allowedHosts: Set<String>? = null): String {
