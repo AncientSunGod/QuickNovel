@@ -3,6 +3,7 @@ package com.lagradost.quicknovel.extensions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.json.JSONObject
 import org.junit.Test
 import java.io.File
 
@@ -43,6 +44,66 @@ class ExtensionMainAPITest {
             assertEquals(listOf("Chapter 1", "Chapter 2", "Chapter 3"), novel.data.map { it.name })
             assertEquals(900, novel.rating)
             assertEquals(com.lagradost.quicknovel.ReleaseStatus.Paused, novel.status)
+        } finally {
+            bundle.delete()
+        }
+    }
+
+    @Test
+    fun mapsLnReaderPickerFiltersIntoQuickNovelMainPageControls() {
+        val bundle = File.createTempFile("quicknovel-filters-", ".js")
+        bundle.writeText("module.exports = {};")
+        try {
+            val extension = InstalledExtension(
+                id = "filter-test",
+                name = "Filter test",
+                site = "https://example.com",
+                version = "1",
+                language = "English",
+                url = "https://example.com/plugin.js",
+                repositoryUrl = "https://example.com/plugins.min.json",
+                bundlePath = bundle.absolutePath,
+            )
+            var capturedOptions: JSONObject? = null
+            val api = ExtensionMainAPI(extension) { operation, args ->
+                when (operation) {
+                    "getPluginFilters" -> """{
+                        "sort":{"label":"Sort by","type":"Picker","value":"popular","options":[
+                            {"label":"Popular","value":"popular"},
+                            {"label":"Latest","value":"latest"}
+                        ]},
+                        "language":{"label":"Language","type":"Picker","value":"en","options":[
+                            {"label":"English","value":"en"},
+                            {"label":"Japanese","value":"ja"}
+                        ]},
+                        "genres":{"label":"Genres","type":"Checkbox","value":[],"options":[
+                            {"label":"Fantasy","value":"fantasy"}
+                        ]}
+                    }"""
+                    "popularNovels" -> {
+                        capturedOptions = args.getJSONObject(1)
+                        "[]"
+                    }
+                    else -> null
+                }
+            }
+
+            assertEquals(
+                listOf("Popular" to "popular", "Latest" to "latest"),
+                api.orderBys,
+            )
+            assertEquals(
+                listOf("English" to "en", "Japanese" to "ja"),
+                api.mainCategories,
+            )
+
+            kotlinx.coroutines.runBlocking {
+                api.loadMainPage(1, "ja", "latest", null)
+            }
+            val filters = capturedOptions!!.getJSONObject("filters")
+            assertEquals("latest", filters.getJSONObject("sort").getString("value"))
+            assertEquals("ja", filters.getJSONObject("language").getString("value"))
+            assertEquals(0, filters.getJSONObject("genres").getJSONArray("value").length())
         } finally {
             bundle.delete()
         }
