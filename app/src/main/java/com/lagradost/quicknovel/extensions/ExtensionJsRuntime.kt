@@ -17,6 +17,7 @@ import org.mozilla.javascript.Scriptable
 import org.mozilla.javascript.ScriptableObject
 import java.io.File
 import java.net.URI
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Partial CommonJS-style JavaScript runtime for LNReader extension bundles.
@@ -27,6 +28,12 @@ import java.net.URI
  * should not be treated as safe until execution is moved to a genuinely isolated runtime.
  */
 object ExtensionJsRuntime {
+    private val sessionStorage = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
+
+    internal fun clearSessionStorage(extensionId: String) {
+        sessionStorage.remove(extensionId)
+    }
+
     private const val MAX_SOURCE_BYTES = 8 * 1024 * 1024
     private const val MAX_ARGUMENT_BYTES = 256 * 1024
     private const val MAX_RESULT_BYTES = 2 * 1024 * 1024
@@ -210,15 +217,18 @@ object ExtensionJsRuntime {
                     require(area.isEmpty() || area == "local" || area == "session") {
                         "Unsupported extension storage area."
                     }
-                    val prefs = storageContext?.getSharedPreferences(
-                        "quicknovel_extension_storage_${extension.id}",
-                        AndroidContext.MODE_PRIVATE,
-                    ) ?: throw IllegalStateException("Extension storage requires an app context.")
-                    val prefix = when (area) {
-                        "local" -> "local_"
-                        "session" -> "session_"
-                        else -> "entry_"
-                    }
+                    // localStorage and the @libs/storage helper persist across app restarts.
+                    // sessionStorage is isolated per extension and kept only in this process.
+                    val sessionValues = if (area == "session") {
+                        sessionStorage.computeIfAbsent(extension.id) { ConcurrentHashMap() }
+                    } else null
+                    val prefs = if (sessionValues == null) {
+                        storageContext?.getSharedPreferences(
+                            "quicknovel_extension_storage_${extension.id}",
+                            AndroidContext.MODE_PRIVATE,
+                        ) ?: throw IllegalStateException("Extension storage requires an app context.")
+                    } else null
+                    val prefix = if (area == "local") "local_" else "entry_"
                     val output = when (command) {
                         "set" -> {
                             require(key.length <= 500) { "Extension storage key is too long." }
@@ -228,47 +238,60 @@ object ExtensionJsRuntime {
                                 .put("created", System.currentTimeMillis())
                                 .put("value", storedValue)
                             if (expires != null) envelope.put("expires", expires)
-                            require(prefix + key in prefs.all.keys || prefs.all.keys.count { it.startsWith(prefix) } < 500) {
+                            val existingKeys = sessionValues?.keys
+                                ?: prefs!!.all.keys.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }.toSet()
+                            require(key in existingKeys || existingKeys.size < 500) {
                                 "Extension storage exceeded the 500-key limit."
                             }
-                            val currentSize = prefs.all.entries
-                                .filter { it.key.startsWith(prefix) }
-                                .sumOf { it.value.toString().length }
-                            val previousSize = prefs.getString(prefix + key, null)?.length ?: 0
+                            val currentSize = sessionValues?.values?.sumOf { it.length }
+                                ?: prefs!!.all.entries.filter { it.key.startsWith(prefix) }
+                                    .sumOf { it.value.toString().length }
+                            val previousSize = sessionValues?.get(key)?.length
+                                ?: prefs!!.getString(prefix + key, null)?.length
+                                ?: 0
                             require(currentSize - previousSize + envelope.toString().length <= 2_097_152) {
                                 "Extension storage exceeded the 2 MB limit."
                             }
-                            prefs.edit().putString(prefix + key, envelope.toString()).apply()
+                            if (sessionValues != null) sessionValues[key] = envelope.toString()
+                            else prefs!!.edit().putString(prefix + key, envelope.toString()).apply()
                             "null"
                         }
                         "get" -> {
                             require(key.length <= 500) { "Extension storage key is too long." }
-                            val stored = prefs.getString(prefix + key, null)
+                            val stored = sessionValues?.get(key) ?: prefs?.getString(prefix + key, null)
                             if (stored == null) "null" else {
                                 val envelope = JSONObject(stored)
                                 val expiry = envelope.optLong("expires", 0L)
                                 if (expiry > 0L && System.currentTimeMillis() >= expiry) {
-                                    prefs.edit().remove(prefix + key).apply()
+                                    if (sessionValues != null) sessionValues.remove(key)
+                                    else prefs!!.edit().remove(prefix + key).apply()
                                     "null"
                                 } else if (raw) envelope.toString()
                                 else {
-                                    val stored = envelope.opt("value")
-                                    if (stored == null) "null"
-                                    else if (stored is JSONObject || stored is JSONArray) stored.toString()
-                                    else if (stored is String) JSONObject.quote(stored)
-                                    else stored.toString()
+                                    val value = envelope.opt("value")
+                                    if (value == null) "null"
+                                    else if (value is JSONObject || value is JSONArray) value.toString()
+                                    else if (value is String) JSONObject.quote(value)
+                                    else value.toString()
                                 }
                             }
                         }
                         "delete" -> {
-                            prefs.edit().remove(prefix + key).apply()
+                            if (sessionValues != null) sessionValues.remove(key)
+                            else prefs!!.edit().remove(prefix + key).apply()
                             "null"
                         }
                         "clearAll" -> {
-                            prefs.all.keys.filter { it.startsWith(prefix) }.forEach { prefs.edit().remove(it).apply() }
+                            if (sessionValues != null) sessionValues.clear()
+                            else prefs!!.all.keys.filter { it.startsWith(prefix) }
+                                .forEach { prefs!!.edit().remove(it).apply() }
                             "null"
                         }
-                        "getAllKeys" -> JSONArray(prefs.all.keys.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }).toString()
+                        "getAllKeys" -> {
+                            val keys = sessionValues?.keys?.toList()
+                                ?: prefs!!.all.keys.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }
+                            JSONArray(keys).toString()
+                        }
                         else -> throw IllegalArgumentException("Unsupported extension storage operation.")
                     }
                     return output
