@@ -181,8 +181,11 @@ class ExtensionJsRuntimeTest {
                 extension,
                 "searchNovels",
                 "[]",
-                testFetchOverride = { url ->
+                testRequestOverride = { url, method, headers, body ->
                     assertEquals("https://example.com/api", url)
+                    assertEquals("POST", method)
+                    assertEquals("application/json", headers["Content-Type"])
+                    assertEquals("""{"query":"sample"}""", body)
                     ExtensionHttpClient.TextResponse(
                         url = url,
                         statusCode = 201,
