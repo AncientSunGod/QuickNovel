@@ -429,8 +429,22 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
         )
     }
 
+    private fun updateChapterReadingProgress() {
+        val range = binding.realText.computeVerticalScrollRange()
+        val extent = binding.realText.computeVerticalScrollExtent()
+        val offset = binding.realText.computeVerticalScrollOffset()
+        val scrollable = (range - extent).coerceAtLeast(0)
+        binding.readOverflowProgress.max = 1000
+        binding.readOverflowProgress.progress = if (scrollable == 0) {
+            if (cachedChapter.isNotEmpty()) 1000 else 0
+        } else {
+            ((offset.toFloat() / scrollable.toFloat()) * 1000f).toInt().coerceIn(0, 1000)
+        }
+    }
+
     fun onScroll() {
         postLines(getAllLines())
+        updateChapterReadingProgress()
     }
 
     private var cachedChapter: List<SpanDisplay> = emptyList()
@@ -818,6 +832,8 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
         readActivity = this
         binding = ReadMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        binding.readOverflowProgress.isVisible = true
+        binding.readOverflowProgress.max = 1000
         fixSystemBarsPadding(binding.readerBottomViewHolder, padTop = false, overlayCutout = false)
         fixSystemBarsPadding(binding.readToolbarHolder, padBottom = false, overlayCutout = false)
 
