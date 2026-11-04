@@ -425,6 +425,33 @@ class ExtensionMainAPITest {
     }
 
     @Test
+    fun disambiguatesImportedProvidersThatCollideWithBuiltInsOrEachOther() {
+        fun extension(id: String, name: String) = InstalledExtension(
+            id = id,
+            name = name,
+            site = "https://example.com",
+            version = "1",
+            language = "English",
+            url = "https://example.com/plugin.js",
+            repositoryUrl = "https://example.com/plugins.min.json",
+            bundlePath = "/tmp/$id.js",
+        )
+        val names = ExtensionProviderNames.forExtensions(
+            extensions = listOf(
+                extension("allnovel", "AllNovel"),
+                extension("duplicate-a", "Shared Source"),
+                extension("duplicate-b", "Shared Source"),
+                extension("unique", "Unique Source"),
+            ),
+            reservedNames = setOf("AllNovel", "Built In"),
+        )
+        assertEquals("AllNovel (LNReader: allnovel)", names["allnovel"])
+        assertEquals("Shared Source (LNReader: duplicate-a)", names["duplicate-a"])
+        assertEquals("Shared Source (LNReader: duplicate-b)", names["duplicate-b"])
+        assertEquals("Unique Source", names["unique"])
+    }
+
+    @Test
     fun mapsNativeScriptLnReaderManifestLanguagesToQuickNovelLanguageCodes() {
         val bundle = File.createTempFile("quicknovel-language-test-", ".js")
         bundle.writeText("module.exports = {};")
