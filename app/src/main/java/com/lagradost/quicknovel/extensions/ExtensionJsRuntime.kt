@@ -332,14 +332,14 @@ object ExtensionJsRuntime {
                     function QNURLSearchParams(query, owner) {
                       this._pairs = [];
                       this._owner = owner || null;
-                      var raw = String(query || '').replace(/^\\?/, '');
+                      var raw = String(query || '').replace(/^\?/, '');
                       if (raw) raw.split('&').forEach(function(part) {
                         if (!part) return;
                         var at = part.indexOf('=');
                         var key = at < 0 ? part : part.slice(0, at);
                         var value = at < 0 ? '' : part.slice(at + 1);
-                        try { key = decodeURIComponent(key.replace(/\\+/g, ' ')); } catch (_) {}
-                        try { value = decodeURIComponent(value.replace(/\\+/g, ' ')); } catch (_) {}
+                        try { key = decodeURIComponent(key.replace(/\+/g, ' ')); } catch (_) {}
+                        try { value = decodeURIComponent(value.replace(/\+/g, ' ')); } catch (_) {}
                         this._pairs.push([key, value]);
                       }, this);
                     }
