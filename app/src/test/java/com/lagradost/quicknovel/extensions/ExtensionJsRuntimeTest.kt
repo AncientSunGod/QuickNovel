@@ -498,6 +498,21 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun approvesAdditionalPublicHostsDeclaredInAnExtensionBundle() {
+        val hosts = ExtensionJsRuntime.approvedHostsForBundle(
+            "https://genesistudio.com",
+            """
+                var api = "https://api.genesistudio.com";
+                var images = 'https://cdn.genesistudio.com/covers';
+            """.trimIndent(),
+        )
+        assertEquals(
+            setOf("genesistudio.com", "api.genesistudio.com", "cdn.genesistudio.com"),
+            hosts,
+        )
+    }
+
+    @Test
     fun fetchBridgeRejectsRequestsOutsideTheExtensionSite() {
         val (extension, file) = extension(
             "var fetch = require('@libs/fetch'); " +
