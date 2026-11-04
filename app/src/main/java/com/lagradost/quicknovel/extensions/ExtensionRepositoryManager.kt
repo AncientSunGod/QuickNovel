@@ -515,6 +515,8 @@ object ExtensionRepositoryManager {
     fun uninstall(context: Context, id: String): Boolean {
         if (!isValidExtensionId(id)) return false
         val directory = File(File(context.filesDir, EXTENSIONS_DIR), id)
-        return !directory.exists() || directory.deleteRecursively()
+        val removed = !directory.exists() || directory.deleteRecursively()
+        if (removed) ExtensionJsRuntime.clearSessionStorage(id)
+        return removed
     }
 }
