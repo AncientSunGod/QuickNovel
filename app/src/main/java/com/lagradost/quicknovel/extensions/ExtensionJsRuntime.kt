@@ -329,19 +329,23 @@ object ExtensionJsRuntime {
                   // Rhino does not provide the browser/WHATWG URL global. LNReader bundles
                   // commonly use new URL(path, base) while resolving links and API endpoints.
                   if (typeof this.URL === 'undefined') {
-                    function QNURLSearchParams(query) {
+                    function QNURLSearchParams(query, owner) {
                       this._pairs = [];
-                      var raw = String(query || '').replace(/^\?/, '');
+                      this._owner = owner || null;
+                      var raw = String(query || '').replace(/^\\?/, '');
                       if (raw) raw.split('&').forEach(function(part) {
                         if (!part) return;
                         var at = part.indexOf('=');
                         var key = at < 0 ? part : part.slice(0, at);
                         var value = at < 0 ? '' : part.slice(at + 1);
-                        try { key = decodeURIComponent(key.replace(/\+/g, ' ')); } catch (_) {}
-                        try { value = decodeURIComponent(value.replace(/\+/g, ' ')); } catch (_) {}
+                        try { key = decodeURIComponent(key.replace(/\\+/g, ' ')); } catch (_) {}
+                        try { value = decodeURIComponent(value.replace(/\\+/g, ' ')); } catch (_) {}
                         this._pairs.push([key, value]);
                       }, this);
                     }
+                    QNURLSearchParams.prototype._sync = function() {
+                      if (this._owner) this._owner.search = this.toString() ? '?' + this.toString() : '';
+                    };
                     QNURLSearchParams.prototype.get = function(key) {
                       key = String(key);
                       for (var i=0;i<this._pairs.length;i++) if (this._pairs[i][0] === key) return this._pairs[i][1];
@@ -351,13 +355,13 @@ object ExtensionJsRuntime {
                       key=String(key); return this._pairs.filter(function(p){return p[0]===key;}).map(function(p){return p[1];});
                     };
                     QNURLSearchParams.prototype.has = function(key) { return this.get(key) !== null; };
-                    QNURLSearchParams.prototype.append = function(k,v) { this._pairs.push([String(k),String(v)]); };
+                    QNURLSearchParams.prototype.append = function(k,v) { this._pairs.push([String(k),String(v)]); this._sync(); };
                     QNURLSearchParams.prototype.set = function(k,v) {
                       k=String(k); var first=true;
                       this._pairs=this._pairs.filter(function(p){if(p[0]!==k)return true;if(first){first=false;return false;}return false;});
-                      this._pairs.push([k,String(v)]);
+                      this._pairs.push([k,String(v)]); this._sync();
                     };
-                    QNURLSearchParams.prototype.delete = function(k) { k=String(k); this._pairs=this._pairs.filter(function(p){return p[0]!==k;}); };
+                    QNURLSearchParams.prototype.delete = function(k) { k=String(k); this._pairs=this._pairs.filter(function(p){return p[0]!==k;}); this._sync(); };
                     QNURLSearchParams.prototype.toString = function() {
                       return this._pairs.map(function(p){return encodeURIComponent(p[0]).replace(/%20/g,'+')+'='+encodeURIComponent(p[1]).replace(/%20/g,'+');}).join('&');
                     };
@@ -388,9 +392,9 @@ object ExtensionJsRuntime {
                       this.protocol=m[1].toLowerCase(); this.username=at>=0?authority.slice(0,at).split(':')[0]:''; this.password=at>=0&&authority.slice(0,at).indexOf(':')>=0?authority.slice(0,at).split(':').slice(1).join(':'):'';
                       this.hostname=hostname.toLowerCase(); this.port=port; this.host=this.hostname+(port?':'+port:'');
                       this.pathname=m[3]||'/'; this.search=m[4]||''; this.hash=m[5]||'';
-                      this.origin=this.protocol+'//'+this.host; this.searchParams=new QNURLSearchParams(this.search);
+                      this.origin=this.protocol+'//'+this.host; this.searchParams=new QNURLSearchParams(this.search, this);
                     }
-                    Object.defineProperty(QNURL.prototype,'href',{get:function(){var q=this.searchParams.toString();return this.origin+this.pathname+(q?'?'+q:this.search)+(this.hash||'');},set:function(v){var u=new QNURL(v);var self=this;['protocol','username','password','hostname','port','host','pathname','search','hash','origin','searchParams'].forEach(function(k){self[k]=u[k];});}});
+                    Object.defineProperty(QNURL.prototype,'href',{get:function(){var q=this.searchParams.toString();return this.origin+this.pathname+(q?'?'+q:'')+(this.hash||'');},set:function(v){var u=new QNURL(v);var self=this;['protocol','username','password','hostname','port','host','pathname','search','hash','origin','searchParams'].forEach(function(k){self[k]=u[k];});}});
                     QNURL.prototype.toString=function(){return this.href;};
                     QNURL.prototype.toJSON=function(){return this.href;};
                     this.URL=QNURL;
