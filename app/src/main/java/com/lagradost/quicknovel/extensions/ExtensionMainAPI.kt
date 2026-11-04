@@ -53,6 +53,37 @@ class ExtensionMainAPI internal constructor(
         )
     }
 
+    private fun loadAdditionalChapterPages(novelPath: String, novel: JSONObject) {
+        val totalPages = novel.optInt("totalPages", 1)
+        if (totalPages <= 1) return
+        require(totalPages <= MAX_CHAPTER_PAGES) {
+            "Extension chapter pagination exceeds the $MAX_CHAPTER_PAGES page limit."
+        }
+
+        val combined = JSONArray()
+        val firstPage = novel.optJSONArray("chapters") ?: JSONArray()
+        for (index in 0 until firstPage.length()) {
+            combined.put(firstPage.opt(index))
+        }
+
+        for (page in 2..totalPages) {
+            val rawPage = execute(
+                "parsePage",
+                JSONArray().put(novelPath).put(page.toString()),
+            ) ?: throw IllegalStateException("Extension did not return chapter page $page.")
+            val pageObject = JSONObject(rawPage)
+            val pageChapters = pageObject.optJSONArray("chapters")
+                ?: throw IllegalStateException("Extension chapter page $page is missing its chapters array.")
+            for (index in 0 until pageChapters.length()) {
+                combined.put(pageChapters.opt(index))
+                require(combined.length() <= MAX_TOTAL_CHAPTERS) {
+                    "Extension returned more than $MAX_TOTAL_CHAPTERS chapters."
+                }
+            }
+        }
+        novel.put("chapters", combined)
+    }
+
     private fun mapSearchItems(json: String): List<SearchResponse> {
         val array = JSONArray(json)
         return buildList {
@@ -83,6 +114,7 @@ class ExtensionMainAPI internal constructor(
         val path = extractPluginPath(url) ?: return@withContext null
         val raw = execute("parseNovel", JSONArray().put(path)) ?: return@withContext null
         val novel = JSONObject(raw)
+        loadAdditionalChapterPages(path, novel)
         novel.put("url", url)
         novel.put("path", url)
 
@@ -147,6 +179,11 @@ class ExtensionMainAPI internal constructor(
         val uri = runCatching { URI(url) }.getOrNull() ?: return null
         val path = uri.path.orEmpty().trim('/')
         return path.substringAfterLast("/novels/", path).takeIf { it.isNotBlank() }
+    }
+
+    private companion object {
+        const val MAX_CHAPTER_PAGES = 50
+        const val MAX_TOTAL_CHAPTERS = 10_000
     }
 
     private fun stripInternalFragment(url: String): String =
