@@ -12,8 +12,8 @@ import java.util.Locale
  * Bounded HTTP helper used by the restricted extension host bridge.
  *
  * This deliberately has no Android Context or app-network objects. The JS bridge limits
- * calls and restricts requests to the extension's declared site host; this remains a
- * compatibility boundary, not process isolation for untrusted code.
+ * calls and restricts requests to the site host plus public API hosts explicitly referenced
+ * by the downloaded bundle; this remains a compatibility boundary, not process isolation.
  */
 object ExtensionHttpClient {
     data class TextResponse(
@@ -38,6 +38,7 @@ object ExtensionHttpClient {
         "accept-language",
         "user-agent",
         "referer",
+        "referrer",
         "authorization",
         "cookie",
         "origin",
@@ -49,7 +50,8 @@ object ExtensionHttpClient {
     /**
      * Fetches text from HTTP(S), enforcing a redirect count and response-size limit.
      * Call from an IO/worker thread. Only a small set of ordinary request headers
-     * are accepted; hop-by-hop and credential headers cannot be supplied by a plugin.
+     * are accepted; hop-by-hop and arbitrary headers are blocked. Credential headers
+     * are only forwarded when the extension bundle explicitly asks for them.
      */
     fun getText(
         rawUrl: String,
