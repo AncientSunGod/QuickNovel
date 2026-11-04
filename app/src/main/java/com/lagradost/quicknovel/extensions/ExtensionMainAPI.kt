@@ -105,8 +105,27 @@ class ExtensionMainAPI internal constructor(
     }
 
     override suspend fun search(query: String): List<SearchResponse>? = withContext(Dispatchers.IO) {
-        val json = execute("searchNovels", JSONArray().put(query).put(1)) ?: return@withContext null
-        mapSearchItems(json)
+        val combined = linkedMapOf<String, SearchResponse>()
+        var receivedAnyPage = false
+        var previousPageKey: List<String>? = null
+
+        for (page in 1..MAX_SEARCH_PAGES) {
+            val json = execute("searchNovels", JSONArray().put(query).put(page))
+                ?: if (!receivedAnyPage) return@withContext null else break
+            receivedAnyPage = true
+            val results = mapSearchItems(json)
+            val pageKey = results.map { it.url }
+            // Some extensions ignore the page argument. Stop instead of returning duplicates.
+            if (pageKey.isNotEmpty() && pageKey == previousPageKey) break
+            previousPageKey = pageKey
+            for (result in results) {
+                combined.putIfAbsent(result.url, result)
+                if (combined.size >= MAX_SEARCH_RESULTS) break
+            }
+            if (results.isEmpty() || combined.size >= MAX_SEARCH_RESULTS) break
+        }
+
+        combined.values.toList()
     }
 
     override suspend fun loadMainPage(
@@ -358,6 +377,8 @@ class ExtensionMainAPI internal constructor(
     }
 
     private companion object {
+        const val MAX_SEARCH_PAGES = 5
+        const val MAX_SEARCH_RESULTS = 250
         const val MAX_CHAPTER_PAGES = 50
         const val MAX_TOTAL_CHAPTERS = 10_000
     }
