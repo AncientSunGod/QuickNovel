@@ -290,7 +290,8 @@ class ExtensionMainAPI internal constructor(
 
         readCustomAsset(extension.customCssPath)?.takeIf { it.isNotBlank() }?.let { css ->
             val safeCss = css.replace(Regex("(?i)</style"), "<\\/style")
-            html = "<style>\n$safeCss\n</style>\n$html"
+            // Keep the stylesheet in the chapter body: EPUB conversion extracts body HTML.
+            html = "<div id=\\"qn-extension-custom-styles\\"><style>\n$safeCss\n</style></div>\n$html"
         }
         html
     }

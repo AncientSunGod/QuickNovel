@@ -59,6 +59,72 @@ class ExtensionMainAPITest {
     }
 
     @Test
+    fun runsCurrentChikariThroughSearchDetailsAndChapterReading() {
+        val source = javaClass.getResourceAsStream("/lnreader/chikari.js")!!
+            .bufferedReader()
+            .use { it.readText() }
+        val bundle = File.createTempFile("quicknovel-chikari-e2e-", ".js")
+        bundle.writeText(source)
+        val extension = InstalledExtension(
+            id = "chikari-e2e",
+            name = "Chikari E2E",
+            site = "https://chikari.moe",
+            version = "1.0.2",
+            language = "en",
+            url = "https://example.com/chikari.js",
+            repositoryUrl = "https://example.com/plugins.min.json",
+            bundlePath = bundle.absolutePath,
+        )
+        val requestedUrls = mutableListOf<String>()
+        try {
+            val api = ExtensionMainAPI(extension, testFetchOverride = { url ->
+                requestedUrls += url
+                when (url) {
+                    "https://chikari.moe/api/series?type=novel&sort=popular&q=sample&limit=36&offset=0" ->
+                        ExtensionHttpClient.TextResponse(
+                            url, 200, "application/json",
+                            """{"items":[{"title":"Sample Novel","slug":"sample-novel","cover_url":"https://chikari.moe/cover.jpg"}]}""",
+                        )
+                    "https://chikari.moe/api/novels/sample-novel" ->
+                        ExtensionHttpClient.TextResponse(
+                            url, 200, "application/json",
+                            """{"title":"Sample Novel","authors":[{"name":"Test Author"}],"genres":[{"name":"Fantasy"}],"description":"A sample.","status":"releasing"}""",
+                        )
+                    "https://chikari.moe/api/novels/sample-novel/chapters?order=asc&limit=500&offset=0" ->
+                        ExtensionHttpClient.TextResponse(
+                            url, 200, "application/json",
+                            """{"items":[{"title":"Chapter One","number":1,"created_at":"2026-10-01"}]}""",
+                        )
+                    "https://chikari.moe/api/novels/sample-novel/chapters/1/read" ->
+                        ExtensionHttpClient.TextResponse(
+                            url, 200, "application/json",
+                            """{"body":"First paragraph\nSecond paragraph"}""",
+                        )
+                    else -> throw AssertionError("Unexpected Chikari request: $url")
+                }
+            })
+
+            val results = kotlinx.coroutines.runBlocking { api.search("sample") }
+            assertEquals(1, results?.size)
+            assertEquals("Sample Novel", results!!.first().name)
+
+            val novel = kotlinx.coroutines.runBlocking { api.load(results.first().url) }
+                as com.lagradost.quicknovel.StreamResponse
+            assertEquals("Sample Novel", novel.name)
+            assertEquals(1, novel.data.size)
+            assertEquals("Chapter One", novel.data.first().name)
+
+            val chapterHtml = kotlinx.coroutines.runBlocking { api.loadHtml(novel.data.first().url) }
+            assertTrue(chapterHtml!!.contains("<p>First paragraph</p>"))
+            assertTrue(chapterHtml.contains("<p>Second paragraph</p>"))
+            assertTrue(requestedUrls.contains("https://chikari.moe/api/novels/sample-novel"))
+            assertTrue(requestedUrls.contains("https://chikari.moe/api/novels/sample-novel/chapters/1/read"))
+        } finally {
+            bundle.delete()
+        }
+    }
+
+    @Test
     fun appliesInstalledCustomJsAndCssWhenLoadingExtensionChapters() {
         val bundle = File.createTempFile("quicknovel-custom-assets-", ".js")
         val customJs = File.createTempFile("quicknovel-custom-", ".js")
@@ -93,8 +159,17 @@ class ExtensionMainAPITest {
             val html = kotlinx.coroutines.runBlocking { api.loadHtml(results!!.first().url)!! }
             assertTrue(!html.contains("Advertisement"))
             assertTrue(html.contains("Chapter text"))
+            assertTrue(html.contains("qn-extension-custom-styles"))
             assertTrue(html.contains("<style>"))
             assertTrue(html.contains("font-size: 1.1em"))
+
+            // APIRepository removes ads by parsing the whole document; EPUB conversion
+            // then extracts body HTML. The extension stylesheet must survive both passes.
+            val afterAdRemoval = org.jsoup.Jsoup.parse(html).html()
+            val epubBody = org.jsoup.Jsoup.parse(afterAdRemoval).selectFirst("body")!!.html()
+            val serializedChapterBody = org.jsoup.Jsoup.parse(epubBody).selectFirst("body")!!.html()
+            assertTrue(serializedChapterBody.contains("qn-extension-custom-styles"))
+            assertTrue(serializedChapterBody.contains("font-size: 1.1em"))
         } finally {
             bundle.delete()
             customJs.delete()
