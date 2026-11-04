@@ -40,6 +40,7 @@ object ExtensionJsRuntime {
         "resolveUrl",
         "getPluginSettings",
         "setPluginSetting",
+        "getPluginFilters",
     )
 
     data class ExecutionResult(val json: String)
@@ -679,6 +680,10 @@ object ExtensionJsRuntime {
                   var plugin = exported && (exported.default || exported);
                   if (!plugin) throw new Error('Bundle does not export a plugin object.');
                   var args = JSON.parse(__qnArgumentsJson);
+
+                  if (__qnOperation === 'getPluginFilters') {
+                    return JSON.stringify(plugin.filters || {});
+                  }
 
                   if (__qnOperation === 'getPluginSettings') {
                     var definitions = plugin.pluginSettings || {};
