@@ -393,7 +393,7 @@ class ExtensionJsRuntimeTest {
                 argumentsJson = """["sample",1]""",
                 testFetchOverride = { url ->
                     assertEquals(
-                        "https://chikari.moe/api/novels?sort=popular&q=sample&limit=36&offset=0",
+                        "https://chikari.moe/api/series?type=novel&sort=popular&q=sample&limit=36&offset=0",
                         url,
                     )
                     ExtensionHttpClient.TextResponse(
