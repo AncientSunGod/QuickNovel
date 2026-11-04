@@ -923,7 +923,7 @@ class ReadActivityViewModel : ViewModel() {
 
                     // Apply user corrections after optional machine translation so rules can
                     // repair recurring MTL wording while keeping all text styling spans intact.
-                    applyTextReplacements(spans).let { (replacedRender, replacedSpans) ->
+                    applyTextReplacements(rendered, spans).let { (replacedRender, replacedSpans) ->
                         rendered = replacedRender
                         spans = replacedSpans
                     }
