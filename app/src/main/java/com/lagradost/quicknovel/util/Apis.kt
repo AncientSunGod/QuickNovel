@@ -275,21 +275,36 @@ class Apis {
 
             val providerKey = this.getString(R.string.search_providers_list_key)
             val set = settingsManager.getStringSet(providerKey, hashSet)?.toHashSet() ?: hashSet
-            val installedNames = runCatching {
-                ExtensionRepositoryManager.getInstalledExtensions(applicationContext).map { it.name }.toSet()
-            }.getOrDefault(emptySet())
+            val installedExtensions = runCatching {
+                ExtensionRepositoryManager.getInstalledExtensions(applicationContext)
+            }.getOrDefault(emptyList())
+            val installedNames = installedExtensions.map { it.name }.toSet()
             val seenKey = "extension_provider_names_seen"
             val previouslySeen = settingsManager.getStringSet(seenKey, emptySet()).orEmpty()
             val newlyInstalled = installedNames - previouslySeen
             if (newlyInstalled.isNotEmpty()) {
                 set.addAll(newlyInstalled)
+
+                // QuickNovel defaults to English providers. When a user installs an
+                // extension in another language, enable that language once so the new
+                // provider is actually visible. Later manual language changes are kept.
+                val languageKey = this.getString(R.string.provider_lang_key)
+                val activeLanguages = settingsManager
+                    .getStringSet(languageKey, hashSetOf("en"))
+                    ?.toHashSet() ?: hashSetOf("en")
+                installedExtensions
+                    .filter { it.name in newlyInstalled }
+                    .map { ExtensionMainAPI(it).lang }
+                    .forEach { activeLanguages.add(it) }
+
                 settingsManager.edit()
                     .putStringSet(providerKey, set)
+                    .putStringSet(languageKey, activeLanguages)
                     .putStringSet(seenKey, previouslySeen + installedNames)
                     .apply()
             }
 
-            val activeLangs = getApiProviderLangSettings()
+            val activeLangs = this.getApiProviderLangSettings()
             val list = HashSet<String>()
             for (name in set) {
                 val api = getApiFromNameNull(name) ?: continue
