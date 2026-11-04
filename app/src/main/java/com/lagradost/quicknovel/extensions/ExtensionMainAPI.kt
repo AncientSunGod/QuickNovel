@@ -28,8 +28,8 @@ class ExtensionMainAPI internal constructor(
     private val context: Context? = null,
     private val testFetchOverride: ((String) -> ExtensionHttpClient.TextResponse)? = null,
     private val testRequestOverride: ((String, String, Map<String, String>, String?) -> ExtensionHttpClient.TextResponse)? = null,
-    private val operationOverride: ((String, JSONArray) -> String?)? = null,
     providerName: String = extension.name,
+    private val operationOverride: ((String, JSONArray) -> String?)? = null,
 ) : MainAPI() {
     override val name: String = providerName
     override val mainUrl: String = extension.site.trimEnd('/')
