@@ -7,6 +7,7 @@ import com.lagradost.quicknovel.setStatus
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
+import kotlin.math.roundToInt
 
 /**
  * Converts LNReader-style JSON results into QuickNovel's native response models.
@@ -114,6 +115,9 @@ object ExtensionResponseMapper {
                 .ifBlank { item.safeText("cover") }
                 .takeIf { it.isNotBlank() }
                 ?.let { resolveHttpUrl(baseUrl, it) },
+            rating = item.optDouble("rating", Double.NaN)
+                .takeIf { it.isFinite() && it >= 0.0 }
+                ?.let { (it.coerceAtMost(5.0) * 200.0).roundToInt().coerceIn(0, 1000) },
             synopsis = item.safeText("synopsis")
                 .ifBlank { item.safeText("summary") }
                 .takeIf { it.isNotBlank() },
