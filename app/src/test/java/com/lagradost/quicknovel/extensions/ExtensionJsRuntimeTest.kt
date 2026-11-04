@@ -1,6 +1,7 @@
 package com.lagradost.quicknovel.extensions
 
 import org.junit.Assert.assertEquals
+import org.json.JSONArray
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -152,7 +153,12 @@ class ExtensionJsRuntimeTest {
         )
         try {
             val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
-            assertEquals("""[{"name":"One","path":"/one"},{"name":"Two","path":"/two"}]""", result.json)
+            val actual = JSONArray(result.json)
+            assertEquals("Unexpected Cheerio each/find result: ${result.json}", 2, actual.length())
+            assertEquals("Unexpected first Cheerio item: ${result.json}", "One", actual.getJSONObject(0).getString("name"))
+            assertEquals("Unexpected first Cheerio path: ${result.json}", "/one", actual.getJSONObject(0).getString("path"))
+            assertEquals("Unexpected second Cheerio item: ${result.json}", "Two", actual.getJSONObject(1).getString("name"))
+            assertEquals("Unexpected second Cheerio path: ${result.json}", "/two", actual.getJSONObject(1).getString("path"))
         } finally {
             file.delete()
         }
