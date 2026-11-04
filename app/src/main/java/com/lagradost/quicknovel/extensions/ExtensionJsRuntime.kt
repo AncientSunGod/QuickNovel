@@ -115,6 +115,8 @@ object ExtensionJsRuntime {
                             "Extension request bodies must be strings; multipart and binary bodies are not supported."
                         )
                     }
+                    val responseEncoding = args.getOrNull(2)?.toString()
+                        ?.takeIf { it.isNotBlank() && it != "undefined" && it != "null" }
                     require(method != "GET" || requestBody == null) {
                         "GET requests may not include a request body."
                     }
@@ -129,6 +131,7 @@ object ExtensionJsRuntime {
                         body = requestBody,
                         headers = requestHeaders,
                         allowedHosts = setOf(approvedHost),
+                        responseEncoding = responseEncoding,
                     ).getOrThrow()
                     return JSONObject()
                         .put("url", response.url)
@@ -310,7 +313,7 @@ object ExtensionJsRuntime {
                   this.Promise = QNPromise;
                   this.require = function(name) {
                     if (name === '@libs/fetch') return {
-                      fetchApi: function(url, init) {
+                      fetchApi: function(url, init, responseEncoding) {
                         var method = init && init.method ? String(init.method).toUpperCase() : 'GET';
                         if (method !== 'GET' && method !== 'POST')
                           throw new Error('Only GET and POST requests are supported by this extension bridge.');
@@ -326,7 +329,7 @@ object ExtensionJsRuntime {
                             throw new Error('Only string request bodies are supported by this extension bridge.');
                           request.body = init.body;
                         }
-                        return Promise.resolve(JSON.parse(__qnFetch(String(url), JSON.stringify(request)))).then(function(r) {
+                        return Promise.resolve(JSON.parse(__qnFetch(String(url), JSON.stringify(request), responseEncoding))).then(function(r) {
                           var responseHeaders = r.headers || {};
                           return {
                             url: r.url, status: r.statusCode, ok: r.statusCode >= 200 && r.statusCode < 300,
@@ -351,9 +354,9 @@ object ExtensionJsRuntime {
                           };
                         });
                       },
-                      fetchText: function(url, init) {
+                      fetchText: function(url, init, encoding) {
                         try {
-                          return this.fetchApi(url, init).then(function(response) {
+                          return this.fetchApi(url, init, encoding).then(function(response) {
                             return response.ok ? response.text() : '';
                           }).catch(function() { return ''; });
                         } catch (error) {
