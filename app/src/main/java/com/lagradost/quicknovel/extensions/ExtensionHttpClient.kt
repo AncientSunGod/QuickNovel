@@ -1,5 +1,6 @@
 package com.lagradost.quicknovel.extensions
 
+import android.webkit.CookieManager
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.InetAddress
@@ -115,6 +116,18 @@ object ExtensionHttpClient {
                 connection.setRequestProperty("Referer", "$requestOrigin/")
                 connection.setRequestProperty("Origin", requestOrigin)
                 connection.setRequestProperty("Cache-Control", "max-age=0")
+                // Reuse the app's normal WebView cookie jar so extensions can maintain
+                // ordinary site sessions across requests. This does not solve or bypass
+                // server-side access challenges; it only sends cookies already issued to
+                // the app and stores cookies returned by the server.
+                val webViewCookies = runCatching {
+                    CookieManager.getInstance().getCookie(currentUrl)
+                }.getOrNull()
+                if (!webViewCookies.isNullOrBlank() &&
+                    safeHeaders.keys.none { it.equals("Cookie", ignoreCase = true) }
+                ) {
+                    connection.setRequestProperty("Cookie", webViewCookies)
+                }
                 safeHeaders.forEach { (key, value) ->
                     if (!value.contains('\r') && !value.contains('\n')) {
                         connection.setRequestProperty(key, value)
@@ -165,6 +178,17 @@ object ExtensionHttpClient {
                     output.toByteArray()
                 } ?: ByteArray(0)
 
+                // Keep response cookies in the shared Android WebView cookie jar for
+                // subsequent extension requests to this site.
+                runCatching {
+                    connection.headerFields.entries
+                        .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
+                        .flatMap { it.value.orEmpty() }
+                        .forEach { cookie ->
+                            CookieManager.getInstance().setCookie(currentUrl, cookie)
+                        }
+                    CookieManager.getInstance().flush()
+                }
                 val responseHeaders = connection.headerFields.entries
                     .filter { it.key != null && it.value?.isNotEmpty() == true }
                     .associate { (key, values) ->
