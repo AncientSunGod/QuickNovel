@@ -25,8 +25,9 @@ class ExtensionMainAPITest {
             )
             val api = ExtensionMainAPI(extension) { operation, args ->
                 when (operation) {
-                    "searchNovels" -> """[{"name":"Paged Novel","path":"series"}]"""
-                    "parseNovel" -> """{"name":"Paged Novel","path":"series","rating":4.5,"status":"On Hiatus","totalPages":3,"chapters":[{"name":"Chapter 1","path":"chapter-1"}]}"""
+                    "getImageRequestInit" -> """{"headers":{"referrer":"https://example.com","User-Agent":"QuickNovel test"}}"""
+                    "searchNovels" -> """[{"name":"Paged Novel","path":"series","cover":"https://example.com/cover.jpg"}]"""
+                    "parseNovel" -> """{"name":"Paged Novel","path":"series","cover":"https://example.com/cover.jpg","rating":4.5,"status":"On Hiatus","totalPages":3,"chapters":[{"name":"Chapter 1","path":"chapter-1"}]}"""
                     "parsePage" -> when (args.getString(1)) {
                         "2" -> """{"chapters":[{"name":"Chapter 2","path":"chapter-2"}]}"""
                         "3" -> """{"chapters":[{"name":"Chapter 3","path":"chapter-3"}]}"""
@@ -38,8 +39,16 @@ class ExtensionMainAPITest {
 
             val search = kotlinx.coroutines.runBlocking { api.search("paged") }
             assertEquals(1, search?.size)
-            val novel = kotlinx.coroutines.runBlocking { api.load(search!!.first().url) }
+            assertEquals(
+                mapOf("referrer" to "https://example.com", "User-Agent" to "QuickNovel test"),
+                search!!.first().posterHeaders,
+            )
+            val novel = kotlinx.coroutines.runBlocking { api.load(search.first().url) }
                 as com.lagradost.quicknovel.StreamResponse
+            assertEquals(
+                mapOf("referrer" to "https://example.com", "User-Agent" to "QuickNovel test"),
+                novel.posterHeaders,
+            )
             assertEquals(3, novel.data.size)
             assertEquals(listOf("Chapter 1", "Chapter 2", "Chapter 3"), novel.data.map { it.name })
             assertEquals(900, novel.rating)
