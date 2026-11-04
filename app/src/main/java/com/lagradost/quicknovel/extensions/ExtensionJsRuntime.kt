@@ -536,7 +536,7 @@ object ExtensionJsRuntime {
                       return dayjs;
                     }
                     if (name === '@libs/isAbsoluteUrl') return {
-                      isUrlAbsolute: function(url) { return /^https?:\\/\\//i.test(String(url)); }
+                      isUrlAbsolute: function(url) { return /^https?:\/\//i.test(String(url)); }
                     };
                     if (name === 'urlencode') {
                       var urlencode = {
