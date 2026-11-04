@@ -326,6 +326,76 @@ object ExtensionJsRuntime {
             ScriptableObject.putProperty(scope, "__qnStorage", storageFunction)
             val compatibilityBootstrap = """
                 (function() {
+                  // Rhino does not provide the browser/WHATWG URL global. LNReader bundles
+                  // commonly use new URL(path, base) while resolving links and API endpoints.
+                  if (typeof this.URL === 'undefined') {
+                    function QNURLSearchParams(query) {
+                      this._pairs = [];
+                      var raw = String(query || '').replace(/^\\?/, '');
+                      if (raw) raw.split('&').forEach(function(part) {
+                        if (!part) return;
+                        var at = part.indexOf('=');
+                        var key = at < 0 ? part : part.slice(0, at);
+                        var value = at < 0 ? '' : part.slice(at + 1);
+                        try { key = decodeURIComponent(key.replace(/\\+/g, ' ')); } catch (_) {}
+                        try { value = decodeURIComponent(value.replace(/\\+/g, ' ')); } catch (_) {}
+                        this._pairs.push([key, value]);
+                      }, this);
+                    }
+                    QNURLSearchParams.prototype.get = function(key) {
+                      key = String(key);
+                      for (var i=0;i<this._pairs.length;i++) if (this._pairs[i][0] === key) return this._pairs[i][1];
+                      return null;
+                    };
+                    QNURLSearchParams.prototype.getAll = function(key) {
+                      key=String(key); return this._pairs.filter(function(p){return p[0]===key;}).map(function(p){return p[1];});
+                    };
+                    QNURLSearchParams.prototype.has = function(key) { return this.get(key) !== null; };
+                    QNURLSearchParams.prototype.append = function(k,v) { this._pairs.push([String(k),String(v)]); };
+                    QNURLSearchParams.prototype.set = function(k,v) {
+                      k=String(k); var first=true;
+                      this._pairs=this._pairs.filter(function(p){if(p[0]!==k)return true;if(first){first=false;return false;}return false;});
+                      this._pairs.push([k,String(v)]);
+                    };
+                    QNURLSearchParams.prototype.delete = function(k) { k=String(k); this._pairs=this._pairs.filter(function(p){return p[0]!==k;}); };
+                    QNURLSearchParams.prototype.toString = function() {
+                      return this._pairs.map(function(p){return encodeURIComponent(p[0]).replace(/%20/g,'+')+'='+encodeURIComponent(p[1]).replace(/%20/g,'+');}).join('&');
+                    };
+                    function QNURL(input, base) {
+                      if (!(this instanceof QNURL)) throw new TypeError("URL constructor must be called with 'new'");
+                      var value=String(input), baseValue=base == null ? '' : (base instanceof QNURL ? base.href : String(base));
+                      if (!/^[a-z][a-z0-9+.-]*:/i.test(value)) {
+                        if (!baseValue) throw new TypeError('Invalid URL');
+                        var bm=baseValue.match(/^([a-z][a-z0-9+.-]*:)\\/\\/([^\\/?#]+)([^?#]*)(\\?[^#]*)?(#.*)?$/i);
+                        if (!bm) throw new TypeError('Invalid base URL');
+                        if (value.indexOf('//')===0) value=bm[1]+value;
+                        else if (value.charAt(0)==='#') value=bm[1]+'//'+bm[2]+(bm[3]||'/')+(bm[4]||'')+value;
+                        else if (value.charAt(0)==='?') value=bm[1]+'//'+bm[2]+(bm[3]||'/')+value;
+                        else {
+                          var path=value.split(/[?#]/)[0], suffix=value.slice(path.length);
+                          var joined=path.charAt(0)==='/'?path:((bm[3]||'/').replace(/[^/]*$/,'')+path);
+                          var stack=[];
+                          joined.split('/').forEach(function(part){if(part==='..')stack.pop();else if(part!=='.')stack.push(part);});
+                          var normalized=stack.join('/'); if(normalized.charAt(0)!=='/')normalized='/'+normalized;
+                          value=bm[1]+'//'+bm[2]+normalized+suffix;
+                        }
+                      }
+                      var m=value.match(/^([a-z][a-z0-9+.-]*:)\\/\\/([^\\/?#]+)([^?#]*)(\\?[^#]*)?(#.*)?$/i);
+                      if(!m) throw new TypeError('Invalid URL: '+value);
+                      var authority=m[2], at=authority.lastIndexOf('@'), hostpart=at>=0?authority.slice(at+1):authority;
+                      var colon=hostpart.lastIndexOf(':'), hostname=hostpart, port='';
+                      if(colon>0 && /^\\d+$/.test(hostpart.slice(colon+1))){hostname=hostpart.slice(0,colon);port=hostpart.slice(colon+1);}
+                      this.protocol=m[1].toLowerCase(); this.username=at>=0?authority.slice(0,at).split(':')[0]:''; this.password=at>=0&&authority.slice(0,at).indexOf(':')>=0?authority.slice(0,at).split(':').slice(1).join(':'):'';
+                      this.hostname=hostname.toLowerCase(); this.port=port; this.host=this.hostname+(port?':'+port:'');
+                      this.pathname=m[3]||'/'; this.search=m[4]||''; this.hash=m[5]||'';
+                      this.origin=this.protocol+'//'+this.host; this.searchParams=new QNURLSearchParams(this.search);
+                    }
+                    Object.defineProperty(QNURL.prototype,'href',{get:function(){var q=this.searchParams.toString();return this.origin+this.pathname+(q?'?'+q:this.search)+(this.hash||'');},set:function(v){var u=new QNURL(v);var self=this;['protocol','username','password','hostname','port','host','pathname','search','hash','origin','searchParams'].forEach(function(k){self[k]=u[k];});}});
+                    QNURL.prototype.toString=function(){return this.href;};
+                    QNURL.prototype.toJSON=function(){return this.href;};
+                    this.URL=QNURL;
+                    this.URLSearchParams=QNURLSearchParams;
+                  }
                   function QNPromise(executor) {
                     var self = this;
                     self.state = 0; self.value = void 0; self.handlers = [];
