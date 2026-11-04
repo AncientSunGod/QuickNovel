@@ -180,6 +180,38 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsDestructuredFetchTextImport() {
+        val (extension, file) = extension(
+            "var fetchText = require('@libs/fetch').fetchText; " +
+                "module.exports = { searchNovels: function() { " +
+                "return fetchText('https://example.com/text').then(function(body) { " +
+                "return [{name:body}]; }); } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension,
+                "searchNovels",
+                "[]",
+                testFetchOverride = { url ->
+                    assertEquals("https://example.com/text", url)
+                    ExtensionHttpClient.TextResponse(
+                        url = url,
+                        statusCode = 200,
+                        contentType = "text/plain",
+                        body = "destructured fetchText works",
+                    )
+                },
+            ).getOrThrow()
+            assertEquals(
+                """[{"name":"destructured fetchText works"}]""",
+                result.json,
+            )
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun supportsFetchApiPostOptionsAndStandardResponseMetadata() {
         val (extension, file) = extension(
             "var fetch = require('@libs/fetch'); " +
