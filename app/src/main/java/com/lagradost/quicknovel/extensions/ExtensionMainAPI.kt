@@ -389,24 +389,30 @@ class ExtensionMainAPI internal constructor(
     private fun JSONObject.text(key: String): String = optString(key, "").take(100_000).trim()
 
     private fun normalizeLanguage(language: String): String {
-        val value = language.trim().lowercase()
-        return when (value) {
-            "english", "en-us", "en-gb" -> "en"
-            "arabic" -> "ar"
-            "bengali", "bangla" -> "bn"
-            "chinese", "simplified chinese" -> "zh"
-            "french" -> "fr"
-            "german" -> "de"
-            "indonesian" -> "id"
-            "japanese" -> "ja"
-            "korean" -> "ko"
-            "portuguese" -> "pt"
-            "russian" -> "ru"
-            "spanish" -> "es"
-            "thai" -> "th"
-            "turkish" -> "tr"
-            "vietnamese" -> "vi"
-            "", "unknown", "und", "undefined" -> "en"
+        // LNReader manifests include both English labels and native-script names. Strip
+        // directional/formatting marks first (some Arabic labels contain an LRM prefix).
+        val value = language
+            .filterNot { Character.getType(it) == Character.FORMAT.toInt() }
+            .trim()
+            .lowercase()
+        return when {
+            value in setOf("english", "en-us", "en-gb") -> "en"
+            value == "arabic" || value.any { it in '\\u0600'..'\\u06ff' } -> "ar"
+            value in setOf("bengali", "bangla") || value.any { it in '\\u0980'..'\\u09ff' } -> "bn"
+            value in setOf("chinese", "simplified chinese") ||
+                value.any { it in '\\u4e00'..'\\u9fff' } -> "zh"
+            value == "french" -> "fr"
+            value == "german" -> "de"
+            value == "indonesian" -> "id"
+            value == "japanese" || value.any { it in '\\u3040'..'\\u30ff' } -> "ja"
+            value == "korean" || value.any { it in '\\uac00'..'\\ud7af' } -> "ko"
+            value == "portuguese" -> "pt"
+            value == "russian" || value.any { it in '\\u0400'..'\\u04ff' } -> "ru"
+            value == "spanish" -> "es"
+            value == "thai" || value.any { it in '\\u0e00'..'\\u0e7f' } -> "th"
+            value == "turkish" -> "tr"
+            value == "vietnamese" -> "vi"
+            value.isBlank() || value in setOf("unknown", "und", "undefined") -> "en"
             else -> value.take(2).ifBlank { "en" }
         }
     }
