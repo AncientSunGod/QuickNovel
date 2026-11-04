@@ -182,7 +182,7 @@ object ExtensionHttpClient {
         contentType: String? = null,
     ): String {
         val contentTypeEncoding = contentType
-            ?.let { Regex("""(?i)charset\\s*=\\s*["']?([^;"'\\s]+)""").find(it)?.groupValues?.getOrNull(1) }
+            ?.let { Regex("""(?i)charset\s*=\s*["']?([^;"'\s]+)""").find(it)?.groupValues?.getOrNull(1) }
         val charset = sequenceOf(requestedEncoding, contentTypeEncoding)
             .filterNotNull()
             .mapNotNull { name -> runCatching { Charset.forName(name.trim()) }.getOrNull() }
