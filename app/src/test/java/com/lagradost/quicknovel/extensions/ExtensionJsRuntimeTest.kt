@@ -132,16 +132,29 @@ class ExtensionJsRuntimeTest {
             "module.exports = { searchNovels: function() { return []; } };"
         )
         try {
-            val html = """<div><p class="promo">Advertisement</p><p>Chapter text</p></div>"""
+            val html = """<div><!-- remove-me --><p>Remove first</p><p>Remove second</p><p>Keep this chapter text</p></div>"""
+            val customScript = """
+                loadedCheerio('*').contents().each(function() {
+                  if (this.type === 'comment' && this.data.trim() === 'remove-me') {
+                    var currentNode = this.next;
+                    for (var i = 0; i < 2 && currentNode; i++) {
+                      var nextNode = currentNode.next;
+                      loadedCheerio(currentNode).remove();
+                      currentNode = nextNode;
+                    }
+                  }
+                });
+            """.trimIndent()
             val result = ExtensionJsRuntime.execute(
                 extension = extension,
                 operation = "transformChapterHtml",
                 argumentsJson = JSONArray().put(html).toString(),
-                customScript = "loadedCheerio('.promo').remove();",
+                customScript = customScript,
             ).getOrThrow()
             val transformed = org.json.JSONTokener(result.json).nextValue() as String
-            assertTrue(!transformed.contains("Advertisement"))
-            assertTrue(transformed.contains("Chapter text"))
+            assertTrue(!transformed.contains("Remove first"))
+            assertTrue(!transformed.contains("Remove second"))
+            assertTrue(transformed.contains("Keep this chapter text"))
         } finally {
             file.delete()
         }
