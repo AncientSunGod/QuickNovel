@@ -166,7 +166,8 @@ class ExtensionJsRuntimeTest {
                 "var encoding = require('urlencode'); " +
                 "module.exports = { searchNovels: function() { " +
                 "return fetch.fetchText('https://example.com/data').then(function(body) { " +
-                "return [{name:body,path:encoding.encode('a b'),absolute:absolute.isUrlAbsolute('https://example.com/x')}]; }); } };"
+                "return [{name:body,path:encoding.encode('a b'),absolute:absolute.isUrlAbsolute('https://example.com/x')," +
+                "invalidAbsolute:absolute.isUrlAbsolute('httpx://example.com/x')}]; }); } };"
         )
         try {
             val result = ExtensionJsRuntime.execute(
@@ -178,7 +179,7 @@ class ExtensionJsRuntimeTest {
                     ExtensionHttpClient.TextResponse(url, 200, "text/plain", "sample")
                 },
             ).getOrThrow()
-            assertEquals("""[{"name":"sample","path":"a%20b","absolute":true}]""", result.json)
+            assertEquals("""[{"name":"sample","path":"a%20b","absolute":true,"invalidAbsolute":false}]""", result.json)
         } finally {
             file.delete()
         }
