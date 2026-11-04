@@ -25,7 +25,7 @@ class ExtensionMainAPITest {
             val api = ExtensionMainAPI(extension) { operation, args ->
                 when (operation) {
                     "searchNovels" -> """[{"name":"Paged Novel","path":"series"}]"""
-                    "parseNovel" -> """{"name":"Paged Novel","path":"series","totalPages":3,"chapters":[{"name":"Chapter 1","path":"chapter-1"}]}"""
+                    "parseNovel" -> """{"name":"Paged Novel","path":"series","rating":4.5,"status":"On Hiatus","totalPages":3,"chapters":[{"name":"Chapter 1","path":"chapter-1"}]}"""
                     "parsePage" -> when (args.getString(1)) {
                         "2" -> """{"chapters":[{"name":"Chapter 2","path":"chapter-2"}]}"""
                         "3" -> """{"chapters":[{"name":"Chapter 3","path":"chapter-3"}]}"""
@@ -41,6 +41,8 @@ class ExtensionMainAPITest {
                 as com.lagradost.quicknovel.StreamResponse
             assertEquals(3, novel.data.size)
             assertEquals(listOf("Chapter 1", "Chapter 2", "Chapter 3"), novel.data.map { it.name })
+            assertEquals(900, novel.rating)
+            assertEquals(com.lagradost.quicknovel.ReleaseStatus.Paused, novel.status)
         } finally {
             bundle.delete()
         }
