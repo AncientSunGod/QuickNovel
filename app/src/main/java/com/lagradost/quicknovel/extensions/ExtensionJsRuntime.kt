@@ -404,27 +404,41 @@ object ExtensionJsRuntime {
                         selection.eq = function(index){return wrap(call('eq',id,'',index));};
                         selection.find = function(selector){return wrap(call('find',id,selector));};
                         selection.children = function(selector){return wrap(call('children',id,selector || ''));};
+                        selection.contents = function(){return wrap(call('contents',id));};
                         selection.parent = function(){return wrap(call('parent',id));};
                         selection.next = function(){return wrap(call('next',id));};
                         selection.prev = function(){return wrap(call('prev',id));};
                         selection.remove = function(){call('remove',id);return selection;};
                         selection.each = function(callback) {
                           for (var i=0;i<selection.length;i++) {
-                            var item=selection.eq(i);
+                            var item=wrapNode(call('eq',id,'',i));
                             callback.call(item,i,item);
                           }
                           return selection;
                         };
                         selection.map = function(callback) {
                           var values=[];
-                          for (var i=0;i<selection.length;i++) values.push(callback.call(selection.eq(i),i,selection.eq(i)));
+                          for (var i=0;i<selection.length;i++) {
+                            var item=wrapNode(call('eq',id,'',i));
+                            values.push(callback.call(item,i,item));
+                          }
                           return {get:function(){return values;},toArray:function(){return values;}};
                         };
                         selection.get = function(index) {
-                          if (index == null) { var all=[]; for(var i=0;i<selection.length;i++) all.push(selection.eq(i)); return all; }
-                          return selection.eq(index);
+                          if (index == null) { var all=[]; for(var i=0;i<selection.length;i++) all.push(wrapNode(call('eq',id,'',i))); return all; }
+                          return wrapNode(call('eq',id,'',index));
                         };
                         return selection;
+                      }
+                      function wrapNode(id) {
+                        var node = wrap(id);
+                        Object.defineProperty(node, 'type', {get:function(){return call('nodeType',id);}});
+                        Object.defineProperty(node, 'data', {get:function(){return call('nodeData',id);}});
+                        Object.defineProperty(node, 'next', {get:function(){
+                          var nextId = call('nextNode',id);
+                          return nextId == null ? null : wrapNode(nextId);
+                        }});
+                        return node;
                       }
                       function load(html) {
                         var root = call('load',0,String(html == null ? '' : html));
