@@ -44,10 +44,28 @@ class ExtensionMainAPI internal constructor(
             }
         }
     }
+    private val genreFilter: Pair<String, JSONObject>? by lazy {
+        if (pickerFilters.size > 2) return@lazy null
+        val keys = pluginFilters.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val definition = pluginFilters.optJSONObject(key) ?: continue
+            if (definition.optString("type") == "Checkbox" ||
+                definition.optString("type") == "XCheckbox"
+            ) return@lazy key to definition
+        }
+        null
+    }
     override val hasMainPage: Boolean = true
     override val orderBys: List<Pair<String, String>> by lazy { filterOptions(0) }
     override val mainCategories: List<Pair<String, String>> by lazy { filterOptions(1) }
-    override val tags: List<Pair<String, String>> by lazy { filterOptions(2) }
+    override val tags: List<Pair<String, String>> by lazy {
+        filterOptions(2).ifEmpty {
+            genreFilter?.let { (key, definition) ->
+                listOf("All ${definition.optString("label", key)}" to "") + filterOptions(definition)
+            }.orEmpty()
+        }
+    }
 
     override suspend fun search(query: String): List<SearchResponse>? = withContext(Dispatchers.IO) {
         val json = execute("searchNovels", JSONArray().put(query).put(1)) ?: return@withContext null
@@ -101,8 +119,10 @@ class ExtensionMainAPI internal constructor(
         novel.put("chapters", combined)
     }
 
-    private fun filterOptions(index: Int): List<Pair<String, String>> {
-        val definition = pickerFilters.getOrNull(index)?.second ?: return emptyList()
+    private fun filterOptions(index: Int): List<Pair<String, String>> =
+        pickerFilters.getOrNull(index)?.second?.let(::filterOptions).orEmpty()
+
+    private fun filterOptions(definition: JSONObject): List<Pair<String, String>> {
         val options = definition.optJSONArray("options") ?: return emptyList()
         return buildList {
             for (optionIndex in 0 until options.length()) {
@@ -127,13 +147,33 @@ class ExtensionMainAPI internal constructor(
             val key = keys.next()
             val definition = pluginFilters.optJSONObject(key) ?: continue
             val defaultValue = definition.opt("value")
-            val selectedValue = pickerIndexes[key]
+            val selectedPickerValue = pickerIndexes[key]
                 ?.let { selections.getOrNull(it) }
                 ?.takeIf { it.isNotBlank() }
-                ?: defaultValue
             val filterState = runCatching { JSONObject(definition.toString()) }
                 .getOrDefault(JSONObject())
-            if (selectedValue != null) filterState.put("value", selectedValue)
+            when {
+                selectedPickerValue != null -> filterState.put("value", selectedPickerValue)
+                genreFilter?.first == key -> {
+                    val selectedGenre = selections.getOrNull(2).orEmpty()
+                    val type = definition.optString("type")
+                    if (type == "XCheckbox") {
+                        val value = (defaultValue as? JSONObject)
+                            ?.let { runCatching { JSONObject(it.toString()) }.getOrNull() }
+                            ?: JSONObject()
+                        val include = JSONArray()
+                        if (selectedGenre.isNotBlank()) include.put(selectedGenre)
+                        value.put("include", include)
+                        if (!value.has("exclude")) value.put("exclude", JSONArray())
+                        filterState.put("value", value)
+                    } else {
+                        val values = JSONArray()
+                        if (selectedGenre.isNotBlank()) values.put(selectedGenre)
+                        filterState.put("value", values)
+                    }
+                }
+                defaultValue != null -> filterState.put("value", defaultValue)
+            }
             selectedFilters.put(key, filterState)
         }
         return selectedFilters
