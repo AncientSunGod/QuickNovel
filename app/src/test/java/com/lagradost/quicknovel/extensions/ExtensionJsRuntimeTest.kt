@@ -153,6 +153,7 @@ class ExtensionJsRuntimeTest {
         )
         try {
             val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            println("Cheerio each/find result: ${result.json}")
             val actual = JSONArray(result.json)
             assertEquals("Unexpected Cheerio each/find result: ${result.json}", 2, actual.length())
             assertEquals("Unexpected first Cheerio item: ${result.json}", "One", actual.getJSONObject(0).getString("name"))
