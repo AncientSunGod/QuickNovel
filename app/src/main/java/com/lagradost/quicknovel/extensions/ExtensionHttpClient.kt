@@ -104,8 +104,16 @@ object ExtensionHttpClient {
                 connection.readTimeout = READ_TIMEOUT_MS
                 connection.setRequestProperty("User-Agent", com.lagradost.quicknovel.USER_AGENT)
                 connection.setRequestProperty("Connection", "keep-alive")
-                connection.setRequestProperty("Accept", "*/*")
-                connection.setRequestProperty("Accept-Language", "*")
+                // Send ordinary navigation context by default. A number of novel sites
+                // reject bare programmatic requests when Accept/Referer are absent.
+                val requestOrigin = URL(currentUrl).let { "${it.protocol}://${it.host}" }
+                connection.setRequestProperty(
+                    "Accept",
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                )
+                connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                connection.setRequestProperty("Referer", "$requestOrigin/")
+                connection.setRequestProperty("Origin", requestOrigin)
                 connection.setRequestProperty("Cache-Control", "max-age=0")
                 safeHeaders.forEach { (key, value) ->
                     if (!value.contains('\r') && !value.contains('\n')) {
