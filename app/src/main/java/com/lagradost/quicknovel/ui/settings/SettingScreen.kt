@@ -291,7 +291,12 @@ object SettingScreen : SearchableSettings {
                                     }
                                     result.onSuccess { entries ->
                                         extensionListings = entries
-                                        repositoryStatus = "Loaded ${entries.size} extension listings. Compatibility is partial: some plugins may fail if they require unsupported LNReader modules."
+                                        val warning = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.lastRefreshWarning
+                                        repositoryStatus = if (warning == null) {
+                                            "Loaded ${entries.size} extension listings. Compatibility is partial: some plugins may fail if they require unsupported LNReader modules."
+                                        } else {
+                                            "Loaded ${entries.size} extension listings, but one or more repositories failed: ${warning}"
+                                        }
                                     }.onFailure { error ->
                                         repositoryStatus = error.message ?: "Could not refresh repositories."
                                     }
