@@ -31,6 +31,7 @@ An upstream Chikari bundle is included as an MIT-licensed fixture. Tests use moc
 ## Supported runtime subset
 
 - **Module helpers:** `@libs/defaultCover`, `@libs/novelStatus`, `@libs/filterInputs`, and `@libs/storage`.
+- **Image requests:** the extension's declared `imageRequestInit.headers` are mapped onto QuickNovel cover requests (within a limited header allowlist).
 - **HTTP:** `fetchApi` supports GET and POST with string request bodies. `fetchText` supports the same request options plus a requested text encoding. `fetchFile` supports bounded GET downloads and returns base64 data (up to 1 MB). Response status, status text, and headers are exposed.
 - **Storage:** `@libs/storage` key/value data and `localStorage` persist per extension. `sessionStorage` is held in memory for the current app process and is cleared on uninstall/process exit.
 - **Plugin settings:** Text, Switch, Select, and CheckboxGroup settings can be read, edited, validated, and saved in the extension settings UI.
@@ -39,7 +40,7 @@ An upstream Chikari bundle is included as an MIT-licensed fixture. Tests use moc
 - **htmlparser2:** a bounded synchronous `Parser` callback subset is provided for `onopentag`, `ontext`, and `onclosetag`.
 - **Dates and promises:** a limited Day.js-compatible helper and synchronous Promise patterns (including `Promise.all`) are available.
 
-Networking has request-count, timeout, response-size, redirect, and approved-host restrictions. Request headers are allowlisted. These controls reduce exposure; they do not turn the runtime into a security sandbox.
+Networking has request-count, timeout, response-size, redirect, and approved-host restrictions. The approved hosts include the extension site and public hostnames explicitly written as absolute HTTP(S) URLs in the downloaded bundle; resolved private/local addresses are rejected. Request headers are allowlisted. These controls reduce exposure; they do not turn the runtime into a security sandbox.
 
 ## Known compatibility gaps
 
