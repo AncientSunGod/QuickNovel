@@ -20,7 +20,7 @@ After refreshing the catalogue, choose an extension and install it. Installed ex
 
 The QuickNovel adapter connects supported LNReader operations to the app's native provider interface:
 
-1. Search calls `searchNovels` (currently page 1) and maps title, path, cover, and latest-chapter data.
+1. Search calls `searchNovels(query, page)` for up to five pages (maximum 250 mapped results), stopping when a page is empty or repeats the previous page, and maps title, path, cover, and latest-chapter data.
 2. The provider's home page calls `popularNovels` and maps available filter definitions into QuickNovel's sort/category/tag controls.
 3. Novel details call `parseNovel`; chapter lists can continue through `parsePage`.
 4. Reading calls `parseChapter`. Optional `customJS` and `customCSS` assets are downloaded at install/update time; custom JavaScript runs against a Cheerio-style parsed chapter, and custom CSS is inserted into the chapter HTML.
