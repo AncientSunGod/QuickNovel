@@ -615,7 +615,7 @@ class ExtensionJsRuntimeTest {
                     )
                 },
             )
-            assertTrue(execution.isSuccess, execution.exceptionOrNull()?.stackTraceToString() ?: "FirstKissNovel execution failed")
+            assertTrue(execution.exceptionOrNull()?.stackTraceToString() ?: "FirstKissNovel execution failed", execution.isSuccess)
             val result = execution.getOrThrow()
             val items = org.json.JSONArray(result.json)
             assertEquals(1, items.length())
