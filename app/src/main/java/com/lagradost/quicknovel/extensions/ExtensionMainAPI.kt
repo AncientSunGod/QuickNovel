@@ -30,7 +30,24 @@ class ExtensionMainAPI internal constructor(
     override val name: String = extension.name
     override val mainUrl: String = extension.site.trimEnd('/')
     override val lang: String = normalizeLanguage(extension.language)
+    private val pluginFilters: JSONObject by lazy {
+        execute("getPluginFilters", JSONArray())?.let { runCatching { JSONObject(it) }.getOrNull() }
+            ?: JSONObject()
+    }
+    private val pickerFilters: List<Pair<String, JSONObject>> by lazy {
+        buildList {
+            val keys = pluginFilters.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val definition = pluginFilters.optJSONObject(key) ?: continue
+                if (definition.optString("type") == "Picker") add(key to definition)
+            }
+        }
+    }
     override val hasMainPage: Boolean = true
+    override val orderBys: List<Pair<String, String>> by lazy { filterOptions(0) }
+    override val mainCategories: List<Pair<String, String>> by lazy { filterOptions(1) }
+    override val tags: List<Pair<String, String>> by lazy { filterOptions(2) }
 
     override suspend fun search(query: String): List<SearchResponse>? = withContext(Dispatchers.IO) {
         val json = execute("searchNovels", JSONArray().put(query).put(1)) ?: return@withContext null
@@ -45,7 +62,7 @@ class ExtensionMainAPI internal constructor(
     ): HeadMainPageResponse = withContext(Dispatchers.IO) {
         val options = JSONObject()
             .put("showLatestNovels", orderBy?.contains("latest", ignoreCase = true) == true)
-            .put("filters", JSONObject())
+            .put("filters", buildFilterValues(mainCategory, orderBy, tag))
         val json = execute("popularNovels", JSONArray().put(page).put(options))
         HeadMainPageResponse(
             url = mainUrl,
@@ -82,6 +99,44 @@ class ExtensionMainAPI internal constructor(
             }
         }
         novel.put("chapters", combined)
+    }
+
+    private fun filterOptions(index: Int): List<Pair<String, String>> {
+        val definition = pickerFilters.getOrNull(index)?.second ?: return emptyList()
+        val options = definition.optJSONArray("options") ?: return emptyList()
+        return buildList {
+            for (optionIndex in 0 until options.length()) {
+                val option = options.optJSONObject(optionIndex) ?: continue
+                val label = option.optString("label").take(200)
+                val value = option.optString("value").take(500)
+                if (label.isNotBlank() && value.isNotBlank()) add(label to value)
+            }
+        }
+    }
+
+    private fun buildFilterValues(
+        mainCategory: String?,
+        orderBy: String?,
+        tag: String?,
+    ): JSONObject {
+        val selections = listOf(mainCategory, orderBy, tag)
+        val selectedFilters = JSONObject()
+        val pickerIndexes = pickerFilters.mapIndexed { index, pair -> pair.first to index }.toMap()
+        val keys = pluginFilters.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val definition = pluginFilters.optJSONObject(key) ?: continue
+            val defaultValue = definition.opt("value")
+            val selectedValue = pickerIndexes[key]
+                ?.let { selections.getOrNull(it) }
+                ?.takeIf { it.isNotBlank() }
+                ?: defaultValue
+            val filterState = runCatching { JSONObject(definition.toString()) }
+                .getOrDefault(JSONObject())
+            if (selectedValue != null) filterState.put("value", selectedValue)
+            selectedFilters.put(key, filterState)
+        }
+        return selectedFilters
     }
 
     private fun mapSearchItems(json: String): List<SearchResponse> {
