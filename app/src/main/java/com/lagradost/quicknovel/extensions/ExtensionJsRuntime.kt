@@ -265,9 +265,11 @@ object ExtensionJsRuntime {
                             val currentSize = sessionValues?.values?.sumOf { it.length }
                                 ?: prefs!!.all.entries.filter { it.key.startsWith(prefix) }
                                     .sumOf { it.value.toString().length }
-                            val previousSize = sessionValues?.get(key)?.length
-                                ?: prefs!!.getString(prefix + key, null)?.length
-                                ?: 0
+                            val previousSize = if (sessionValues != null) {
+                                sessionValues[key]?.length ?: 0
+                            } else {
+                                prefs!!.getString(prefix + key, null)?.length ?: 0
+                            }
                             require(currentSize - previousSize + envelope.toString().length <= 2_097_152) {
                                 "Extension storage exceeded the 2 MB limit."
                             }
