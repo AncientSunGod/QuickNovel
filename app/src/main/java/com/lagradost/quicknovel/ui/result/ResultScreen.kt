@@ -142,10 +142,29 @@ object ResultScreen : Screen {
 @Composable
 fun ResultScreen(state: ResultState, action: (ResultPageAction) -> Unit) {
     Scaffold { innerPadding ->
-        if (state.loadingResponse) {
-            LoadingScreen(Modifier.padding(innerPadding))
-        } else {
-            ResultScreenImpl(innerPadding, state, action)
+        when {
+            state.loadingResponse -> LoadingScreen(Modifier.padding(innerPadding))
+            state.responseError != null && state.response == null -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = state.responseError.message ?: state.responseError.toString(),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = { action(ResultPageAction.Retry) }) {
+                        Text("Retry")
+                    }
+                }
+            }
+            else -> ResultScreenImpl(innerPadding, state, action)
         }
     }
 }
