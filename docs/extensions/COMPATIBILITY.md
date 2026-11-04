@@ -26,11 +26,11 @@ The QuickNovel adapter connects supported LNReader operations to the app's nativ
 4. Reading calls `parseChapter`. Optional `customJS` and `customCSS` assets are downloaded at install/update time; custom JavaScript runs against a Cheerio-style parsed chapter, and custom CSS is inserted into the chapter HTML.
 5. Opaque extension paths are preserved in internal URL fragments so a saved novel or chapter can route back to the extension. The internal fragment is not sent to the website.
 
-An upstream Chikari bundle is included as an MIT-licensed fixture. Tests use mocked HTTP responses to exercise the real bundle and the provider adapter; they do not substitute for testing a live site in the installed app.
+Upstream Chikari and FirstKissNovel bundles are included as MIT-licensed fixtures. Tests use mocked HTTP responses to exercise both real upstream bundles; they do not substitute for testing a live site in the installed app.
 
 ## Supported runtime subset
 
-- **Module helpers:** `@libs/defaultCover`, `@libs/novelStatus`, `@libs/filterInputs`, and `@libs/storage`.
+- **Module helpers:** `@libs/defaultCover`, `@libs/novelStatus`, `@libs/filterInputs`, `@libs/storage`, `@libs/isAbsoluteUrl`, and `urlencode`.
 - **Image requests:** the extension's declared `imageRequestInit.headers` are mapped onto QuickNovel cover requests (within a limited header allowlist).
 - **HTTP:** `fetchApi` supports GET and POST with string request bodies. `fetchText` supports the same request options plus a requested text encoding. `fetchFile` supports bounded GET downloads and returns base64 data (up to 1 MB). Response status, status text, and headers are exposed.
 - **Storage:** `@libs/storage` key/value data and `localStorage` persist per extension. `sessionStorage` is held in memory for the current app process and is cleared on uninstall/process exit.
