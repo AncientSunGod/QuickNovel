@@ -49,7 +49,7 @@ The following are not implemented as full LNReader equivalents:
 - `fetchProto`, protobuf encoding/decoding, AES helpers, and general `@libs/utils` modules.
 - Binary, multipart, and arbitrary request bodies; unrestricted Fetch API behavior; browser APIs such as a full `window`/DOM environment.
 - Full Cheerio/htmlparser2 behavior, all Day.js plugins, and true asynchronous event-loop/microtask scheduling.
-- Search pagination beyond the first `searchNovels` page.
+- Search requests up to five `searchNovels` pages (maximum 250 mapped results), stopping on an empty or repeated page. Extensions that use a different pagination contract may still need an adapter.
 - Full filter UI for multiple simultaneous checkbox selections, included/excluded genre groups, or arbitrary custom filter types.
 - Every LNReader plugin setting type and extension-specific UI surface.
 
