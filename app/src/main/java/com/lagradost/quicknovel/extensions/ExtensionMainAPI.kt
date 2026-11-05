@@ -168,7 +168,7 @@ class ExtensionMainAPI internal constructor(
         for (page in 2..totalPages) {
             val rawPage = execute(
                 "parsePage",
-                JSONArray().put(novelPath).put(page.toString()),
+                JSONArray().put(novelPath).put(page),
             ) ?: throw IllegalStateException("Extension did not return chapter page $page.")
             val pageObject = JSONObject(rawPage)
             val pageChapters = pageObject.optJSONArray("chapters")
