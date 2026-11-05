@@ -430,22 +430,32 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
     }
 
     private fun updateChapterReadingProgress() {
+        if (!::textAdapter.isInitialized || !::textLayoutManager.isInitialized) return
+
+        // Use RecyclerView's measured scroll metrics rather than adapter positions.
+        // Adapter positions can change as surrounding chapters are loaded/unloaded,
+        // which made the old fraction jump and sometimes appear stuck at zero.
         val itemCount = textAdapter.itemCount
-        val firstVisible = textLayoutManager.findFirstVisibleItemPosition()
-        val firstChild = textLayoutManager.findViewByPosition(firstVisible)
-        val fractionWithinItem = if (firstChild != null && firstChild.height > 0) {
-            (-firstChild.top.toFloat() / firstChild.height.toFloat()).coerceIn(0f, 1f)
+        val scrollRange = binding.realText.computeVerticalScrollRange()
+        val scrollExtent = binding.realText.computeVerticalScrollExtent()
+        val maxScrollOffset = (scrollRange - scrollExtent).coerceAtLeast(0)
+        val scrollOffset = binding.realText.computeVerticalScrollOffset()
+            .coerceIn(0, maxScrollOffset)
+
+        val progress = if (itemCount <= 0 || maxScrollOffset <= 0) {
+            0
         } else {
-            0f
+            (scrollOffset.toFloat() / maxScrollOffset.toFloat() * 1000f)
+                .roundToInt()
+                .coerceIn(0, 1000)
         }
-        val chapterFraction = when {
-            itemCount <= 0 -> 0f
-            firstVisible == RecyclerView.NO_POSITION -> 0f
-            firstVisible >= itemCount - 1 && !binding.realText.canScrollVertically(1) -> 1f
-            else -> ((firstVisible + fractionWithinItem) / itemCount.toFloat()).coerceIn(0f, 1f)
+
+        binding.readOverflowProgress.progress = progress
+        binding.readOverflowProgress.isVisible =
+            itemCount > 0 && binding.readNormalLayout.isVisible
+        if (binding.readOverflowProgress.isVisible) {
+            binding.readOverflowProgress.bringToFront()
         }
-        binding.readOverflowProgress.progress = (chapterFraction * 1000f).roundToInt()
-        binding.readOverflowProgress.isVisible = binding.readNormalLayout.isVisible
     }
 
     fun onScroll() {
