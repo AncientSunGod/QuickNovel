@@ -293,6 +293,11 @@ class WebViewResolver(
                     override fun onPageFinished(view: WebView?, finishUrl: String?) {
                         super.onPageFinished(view, finishUrl)
                         if (finishUrl == null) return
+                        // WebView may report iframe completions through this callback too.
+                        // Never treat a same-host iframe as completion of the top-level
+                        // anti-bot page; wait for the actual page navigation to settle.
+                        val topLevelUrl = view?.url
+                        if (!topLevelUrl.isNullOrBlank() && topLevelUrl != finishUrl) return
 
                         if (requestCallBack(requestCreator("GET", finishUrl))) {
                             if (scriptToFinish == null) {
