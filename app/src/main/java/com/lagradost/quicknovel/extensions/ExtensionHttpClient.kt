@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Bounded HTTP helper used by the restricted extension host bridge.
@@ -192,6 +193,9 @@ object ExtensionHttpClient {
                                 requestCallBack = { request ->
                                     request.url.host.equals(targetHost, ignoreCase = true)
                                 },
+                                // The resolver's default 5 seconds can expire while Cloudflare's
+                                // browser-side challenge script is still retrying its verification.
+                                completionStabilityDelay = 18.seconds,
                             )
                         }
                     }.map { true }.getOrDefault(false)
