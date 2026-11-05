@@ -128,7 +128,9 @@ object ExtensionHttpClient {
                 )
                 // Reuse browser request hints captured from a prior in-app WebView
                 // session for this host. Explicit extension headers still take priority.
-                val browserHeaders = WebViewResolver.capturedHeaders[requestHost].orEmpty()
+                val browserHeaders = WebViewResolver.capturedHeaders[requestHost]
+                    .orEmpty()
+                    .filterKeys { it.lowercase(Locale.ROOT) in allowedRequestHeaders }
                 val effectiveHeaders = browserHeaders + safeHeaders
                 connection.setRequestProperty("Connection", "keep-alive")
                 // Send ordinary navigation context by default. A number of novel sites
@@ -170,6 +172,7 @@ object ExtensionHttpClient {
                 val status = connection.responseCode
                 if (status == 403 && !webViewRecoveryAttempted && allowedHosts != null) {
                     webViewRecoveryAttempted = true
+                    connection.disconnect()
                     val targetHost = URL(currentUrl).host
                     val browserSessionOpened = runCatching {
                         // This overload preserves existing WebView cookies and uses the
