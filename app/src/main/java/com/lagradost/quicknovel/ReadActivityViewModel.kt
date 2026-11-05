@@ -459,6 +459,31 @@ data class TextReplacementRule(
 
 private const val TEXT_REPLACEMENTS_KEY = "reader_text_replacements"
 
+/**
+ * Converts both current rule objects and legacy JSON/Jackson map values into
+ * safe reader rules. Kept pure so persisted-data migration is unit-testable.
+ */
+internal fun normalizeTextReplacementRules(stored: Any?): List<TextReplacementRule> {
+    val entries = when (stored) {
+        is Iterable<*> -> stored
+        is Map<*, *> -> listOf(stored)
+        else -> return emptyList()
+    }
+
+    return entries.mapNotNull { entry ->
+        when (entry) {
+            is TextReplacementRule -> entry
+            is Map<*, *> -> {
+                val find = (entry["find"] ?: entry["Find"]) as? String
+                val replace = (entry["replace"] ?: entry["Replace"]) as? String ?: ""
+                find?.takeIf { it.isNotBlank() }?.let { TextReplacementRule(it, replace) }
+            }
+            else -> null
+        }
+    }
+}
+
+
 data class ChapterUpdate(
     val data: ArrayList<SpanDisplay>,
     val seekToDesired: Boolean
@@ -987,8 +1012,19 @@ class ReadActivityViewModel : ViewModel() {
 
 
 
-    fun getTextReplacements(): List<TextReplacementRule> =
-        getKey<List<TextReplacementRule>>(TEXT_REPLACEMENTS_KEY).orEmpty()
+    fun getTextReplacements(): List<TextReplacementRule> {
+        // Preferences written through Jackson can be read back as
+        // ArrayList<LinkedHashMap<String, Any>> because the generic element type
+        // is erased. Never cast those map values directly to TextReplacementRule.
+        val stored: Any? = getKey<Any>(TEXT_REPLACEMENTS_KEY)
+        val rules = normalizeTextReplacementRules(stored)
+
+        // Migrate legacy map-backed values to the current typed representation.
+        if (stored is Map<*, *> || (stored is Iterable<*> && stored.any { it is Map<*, *> })) {
+            setKey(TEXT_REPLACEMENTS_KEY, rules)
+        }
+        return rules
+    }
 
     fun saveTextReplacements(rules: List<TextReplacementRule>) {
         val cleaned = rules.filter { it.find.isNotBlank() }
