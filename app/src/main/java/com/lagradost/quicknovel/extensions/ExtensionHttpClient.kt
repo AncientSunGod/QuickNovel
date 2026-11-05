@@ -190,6 +190,10 @@ object ExtensionHttpClient {
                 }
 
                 val status = connection.responseCode
+                // Set-Cookie can arrive on 3xx redirects and 403 challenge responses too.
+                // Persist it before handling either branch so the next navigation/retry sees
+                // the complete session, not only cookies from successful 2xx responses.
+                storeResponseCookies(connection, currentUrl)
                 if (status == 403 && !webViewRecoveryAttempted && allowedHosts != null) {
                     webViewRecoveryAttempted = true
                     connection.disconnect()
@@ -251,22 +255,6 @@ object ExtensionHttpClient {
                     output.toByteArray()
                 } ?: ByteArray(0)
 
-                // Keep response cookies in the shared Android WebView cookie jar for
-                // subsequent extension requests to this site.
-                runCatching {
-                    val cookieManager = CookieManager.getInstance()
-                    connection.headerFields.entries
-                        .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
-                        .flatMap { it.value.orEmpty() }
-                        .forEach { cookie ->
-                            // CookieManager.setCookie is asynchronous. Wait briefly for each
-                            // callback so the next chapter/search request can use this session.
-                            val stored = CountDownLatch(1)
-                            cookieManager.setCookie(currentUrl, cookie) { stored.countDown() }
-                            stored.await(2, TimeUnit.SECONDS)
-                        }
-                    cookieManager.flush()
-                }
                 val responseHeaders = connection.headerFields.entries
                     .filter { it.key != null && it.value?.isNotEmpty() == true }
                     .associate { (key, values) ->
@@ -288,6 +276,23 @@ object ExtensionHttpClient {
             }
         }
         throw IllegalStateException("Extension request could not be completed.")
+    }
+
+    private fun storeResponseCookies(connection: HttpURLConnection, url: String) {
+        runCatching {
+            val cookieManager = CookieManager.getInstance()
+            connection.headerFields.entries
+                .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
+                .flatMap { it.value.orEmpty() }
+                .forEach { cookie ->
+                    // CookieManager.setCookie is asynchronous. Wait briefly for each
+                    // callback so redirects and retries can use the updated session.
+                    val stored = CountDownLatch(1)
+                    cookieManager.setCookie(url, cookie) { stored.countDown() }
+                    stored.await(2, TimeUnit.SECONDS)
+                }
+            cookieManager.flush()
+        }
     }
 
     internal fun decodeText(
