@@ -135,8 +135,10 @@ class MainPageViewModel2(
         val from = state.value.filter.query
         val fromList = state.value.filter.items
 
+        var lockAcquired = false
         try {
             expandMutex.lock()
+            lockAcquired = true
             if (from != state.value.filter.query) return@withContext
 
             val mainCategory = api.mainCategories.getOrNull(from.category)
@@ -187,10 +189,18 @@ class MainPageViewModel2(
                 }
             }
         } finally {
-            updateState {
-                copy(filter = filter.copy(loading = false))
+            // A coroutine cancelled while waiting for the mutex never acquired it.
+            // Do not unlock another request's mutex or clear that request's loading UI.
+            if (lockAcquired) {
+                updateState {
+                    if (filter.query == from) {
+                        copy(filter = filter.copy(loading = false))
+                    } else {
+                        this
+                    }
+                }
+                expandMutex.unlock()
             }
-            expandMutex.unlock()
         }
     }
 
