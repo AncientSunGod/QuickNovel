@@ -10,6 +10,8 @@ import java.net.URL
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Bounded HTTP helper used by the restricted extension host bridge.
@@ -231,13 +233,18 @@ object ExtensionHttpClient {
                 // Keep response cookies in the shared Android WebView cookie jar for
                 // subsequent extension requests to this site.
                 runCatching {
+                    val cookieManager = CookieManager.getInstance()
                     connection.headerFields.entries
                         .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
                         .flatMap { it.value.orEmpty() }
                         .forEach { cookie ->
-                            CookieManager.getInstance().setCookie(currentUrl, cookie)
+                            // CookieManager.setCookie is asynchronous. Wait briefly for each
+                            // callback so the next chapter/search request can use this session.
+                            val stored = CountDownLatch(1)
+                            cookieManager.setCookie(currentUrl, cookie) { stored.countDown() }
+                            stored.await(2, TimeUnit.SECONDS)
                         }
-                    CookieManager.getInstance().flush()
+                    cookieManager.flush()
                 }
                 val responseHeaders = connection.headerFields.entries
                     .filter { it.key != null && it.value?.isNotEmpty() == true }
