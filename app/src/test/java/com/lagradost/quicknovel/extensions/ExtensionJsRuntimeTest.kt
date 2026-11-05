@@ -94,6 +94,21 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsLegacyConstantsAliasUsedByNovelFireFamilyBundles() {
+        val (extension, file) = extension(
+            "var constants = require('@/types/constants'); " +
+                "module.exports = { searchNovels: function() { " +
+                "return [{name:'Novel Fire',path:'/novel',cover:constants.defaultCover}]; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("""[{"name":"Novel Fire","path":"/novel","cover":""}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun popularListingsUsePluginFilterDefaultsWhenNoFiltersAreConfigured() {
         val (extension, file) = extension(
             "module.exports = { filters:{genre:{value:'Fantasy'}}, " +
