@@ -406,7 +406,15 @@
                         app:srcCompat="@drawable/ic_outline_settings_24"
                         app:tint="?attr/white" />
 
-            </androidx.constraintlayout.widget.ConstraintLayout>
+                    <androidx.core.widget.ContentLoadingProgressBar
+
+                android:id="@+id/read_overflow_progress"
+                android:layout_gravity="bottom"
+                android:layout_width="match_parent"
+                android:visibility="gone"
+                style="@style/Widget.AppCompat.ProgressBar.Horizontal"
+                android:layout_marginBottom="25dp"
+                android:layout_height="10dp">
 
             <androidx.constraintlayout.widget.ConstraintLayout
                     android:id="@+id/reader_bottom_view_tts"
