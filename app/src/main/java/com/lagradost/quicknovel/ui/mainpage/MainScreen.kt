@@ -22,6 +22,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -169,6 +170,32 @@ fun MainPageScreen(state: MainPageState, action: (MainPageAction) -> Unit) {
                 modifier = Modifier.fillMaxSize(),
                 searchAction = searchAction,
             )
+
+            // Keep loading feedback visible in the content area as well as the toolbar.
+            // This is especially important on an empty provider page, where the grid
+            // otherwise looks like a blank screen while the first request is running.
+            if (visibleLoading) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth(),
+                )
+                if (visibleItems.isEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            text = "Loading novels…",
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                }
+            }
 
             // An extension runtime failure previously left an empty black provider page.
             // Show the actual error (or a clear empty state) and provide a retry action.
