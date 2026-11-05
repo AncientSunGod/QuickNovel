@@ -281,16 +281,19 @@ object ExtensionHttpClient {
     private fun storeResponseCookies(connection: HttpURLConnection, url: String) {
         runCatching {
             val cookieManager = CookieManager.getInstance()
-            connection.headerFields.entries
+            val cookies = connection.headerFields.entries
                 .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
                 .flatMap { it.value.orEmpty() }
-                .forEach { cookie ->
-                    // CookieManager.setCookie is asynchronous. Wait briefly for each
-                    // callback so redirects and retries can use the updated session.
-                    val stored = CountDownLatch(1)
+            if (cookies.isNotEmpty()) {
+                // Set all cookies before waiting, with one bounded overall timeout.
+                // A per-cookie wait could stall a provider for many seconds if a response
+                // contains a large number of Set-Cookie headers.
+                val stored = CountDownLatch(cookies.size)
+                cookies.forEach { cookie ->
                     cookieManager.setCookie(url, cookie) { stored.countDown() }
-                    stored.await(2, TimeUnit.SECONDS)
                 }
+                stored.await(2, TimeUnit.SECONDS)
+            }
             cookieManager.flush()
         }
     }
