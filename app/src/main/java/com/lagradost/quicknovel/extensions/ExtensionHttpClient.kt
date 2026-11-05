@@ -104,7 +104,10 @@ object ExtensionHttpClient {
         }
 
         val safeHeaders = headers.entries
-            .filter { it.key.lowercase(Locale.ROOT) in allowedRequestHeaders }
+            .filter {
+                val name = it.key.lowercase(Locale.ROOT)
+                name in allowedRequestHeaders && name != "user-agent"
+            }
             .associate { (key, value) ->
                 key to value.take(MAX_HEADER_VALUE_LENGTH)
             }
@@ -170,6 +173,14 @@ object ExtensionHttpClient {
                         connection.setRequestProperty(key, value)
                     }
                 }
+                // Keep the request User-Agent identical to the Android WebView session.
+                // Some anti-bot cookies are bound to the browser fingerprint; allowing an
+                // extension's Node-style User-Agent to overwrite it breaks every retry.
+                connection.setRequestProperty(
+                    "User-Agent",
+                    browserUserAgent?.takeIf { it.isNotBlank() }
+                        ?: com.lagradost.quicknovel.USER_AGENT
+                )
                 if (currentMethod == "POST") {
                     connection.doOutput = true
                     currentBody?.let { bytes ->
