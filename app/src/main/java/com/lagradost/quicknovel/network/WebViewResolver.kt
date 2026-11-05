@@ -232,8 +232,23 @@ class WebViewResolver(
                         println("Loading WebView URL: $webViewUrl")
                         val req = request.toRequest()
 
-                        if (!webViewUrl.contains("/cdn-cgi/") && !webViewUrl.contains("cloudflare")) {
-                            capturedHeaders[runCatching { URI(webViewUrl).host }.getOrNull() ?: ""] = request.requestHeaders
+                        // Only retain browser hints from top-level navigations. Capturing
+                        // every subresource here meant the last CSS/image/script request could
+                        // overwrite the host profile with Sec-Fetch-Dest: style/image, then those
+                        // unrelated values were replayed on every extension API request.
+                        if (request.isForMainFrame &&
+                            !webViewUrl.contains("/cdn-cgi/") &&
+                            !webViewUrl.contains("cloudflare")
+                        ) {
+                            val browserHints = request.requestHeaders.filterKeys { key ->
+                                val normalized = key.lowercase()
+                                normalized == "accept-language" ||
+                                    normalized.startsWith("sec-ch-ua")
+                            }
+                            val host = runCatching { URI(webViewUrl).host }.getOrNull()
+                            if (!host.isNullOrBlank() && browserHints.isNotEmpty()) {
+                                capturedHeaders[host.lowercase()] = browserHints
+                            }
                         }
 
                         // Check if this request matches our target URL
