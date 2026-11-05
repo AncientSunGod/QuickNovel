@@ -216,6 +216,33 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsCommonCheerioTraversalFilteringAndMutationMethods() {
+        val (extension, file) = extension(
+            "var cheerio = require('cheerio'); " +
+                "module.exports = { searchNovels: function() { " +
+                "var $ = cheerio.load('<div id=\"root\"><p>One</p><p>Two</p></div>'); " +
+                "var nodes = $('#root').find('*').addBack().contents(); " +
+                "var paragraphs = nodes.filter(function(i, node) { " +
+                "return node.nodeType === 1 && node.name === 'p'; }); " +
+                "paragraphs.first().attr('data-added','yes').before('<b>Before</b>').after('<i>After</i>'); " +
+                "paragraphs.last().replaceWith('<strong>Last</strong>'); " +
+                "return [{count:paragraphs.toArray().length,html:$('#root').html(),last:$('strong').text()}]; " +
+                "} };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertTrue(result.json.contains("\"count\":2"))
+            assertTrue(result.json.contains("<b>Before</b>"))
+            assertTrue(result.json.contains("data-added=\\\"yes\\\""))
+            assertTrue(result.json.contains("<i>After</i>"))
+            assertTrue(result.json.contains("<strong>Last</strong>"))
+            assertTrue(result.json.contains("\"last\":\"Last\""))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun decodesNonUtf8FetchTextUsingRequestedOrResponseCharset() {
         val gbk = Charset.forName("GBK")
         val source = "章节内容"
