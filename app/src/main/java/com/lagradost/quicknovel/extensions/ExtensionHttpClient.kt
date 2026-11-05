@@ -186,7 +186,7 @@ object ExtensionHttpClient {
                                 },
                             )
                         }
-                    }.getOrDefault(false)
+                    }.map { true }.getOrDefault(false)
                     if (browserSessionOpened) {
                         runCatching { CookieManager.getInstance().flush() }
                         return@repeat
