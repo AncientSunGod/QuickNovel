@@ -132,7 +132,13 @@ object ExtensionHttpClient {
                 // session for this host. Explicit extension headers still take priority.
                 val browserHeaders = WebViewResolver.capturedHeaders[requestHost]
                     .orEmpty()
-                    .filterKeys { it.lowercase(Locale.ROOT) in allowedRequestHeaders }
+                    .filterKeys {
+                        val normalized = it.lowercase(Locale.ROOT)
+                        normalized in allowedRequestHeaders &&
+                            normalized != "cookie" &&
+                            normalized != "user-agent"
+                    }
+                // CookieManager is authoritative; do not replace its live value with a stale captured header.
                 val effectiveHeaders = browserHeaders + safeHeaders
                 connection.setRequestProperty("Connection", "keep-alive")
                 // Send ordinary navigation context by default. A number of novel sites
