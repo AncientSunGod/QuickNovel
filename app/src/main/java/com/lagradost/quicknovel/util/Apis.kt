@@ -165,15 +165,27 @@ class Apis {
                 val context = activity?.applicationContext
                     ?: com.lagradost.quicknovel.BaseApplication.context?.applicationContext
                     ?: return builtInApis
-                val installed = runCatching {
-                    ExtensionRepositoryManager.getInstalledExtensions(context)
-                        .map { ExtensionMainAPI(it, context) }
-                }.getOrDefault(emptyList())
-                val builtInNames = builtInApis.map { it.name }.toSet()
-                return (builtInApis + installed.filterNot { it.name in builtInNames })
+                return (builtInApis + getExtensionApis(context))
                     .distinctBy { it.name }
                     .sortedBy { it.name }
             }
+
+        private fun getExtensionApis(context: Context): List<ExtensionMainAPI> {
+            val extensions = runCatching {
+                ExtensionRepositoryManager.getInstalledExtensions(context.applicationContext)
+            }.getOrDefault(emptyList())
+            val providerNames = com.lagradost.quicknovel.extensions.ExtensionProviderNames.forExtensions(
+                extensions,
+                builtInApis.map { it.name }.toSet(),
+            )
+            return extensions.map { extension ->
+                ExtensionMainAPI(
+                    extension = extension,
+                    context = context.applicationContext,
+                    providerName = providerNames[extension.id] ?: extension.name,
+                )
+            }
+        }
 
         fun getApiFromName(name: String): APIRepository {
             return getApiFromNameOrNull(name) ?: APIRepository(apis[1])
@@ -275,21 +287,34 @@ class Apis {
 
             val providerKey = this.getString(R.string.search_providers_list_key)
             val set = settingsManager.getStringSet(providerKey, hashSet)?.toHashSet() ?: hashSet
-            val installedNames = runCatching {
-                ExtensionRepositoryManager.getInstalledExtensions(applicationContext).map { it.name }.toSet()
-            }.getOrDefault(emptySet())
+            val installedApis = getExtensionApis(applicationContext)
+            val installedNames = installedApis.map { it.name }.toSet()
             val seenKey = "extension_provider_names_seen"
             val previouslySeen = settingsManager.getStringSet(seenKey, emptySet()).orEmpty()
             val newlyInstalled = installedNames - previouslySeen
             if (newlyInstalled.isNotEmpty()) {
                 set.addAll(newlyInstalled)
+
+                // QuickNovel defaults to English providers. When a user installs an
+                // extension in another language, enable that language once so the new
+                // provider is actually visible. Later manual language changes are kept.
+                val languageKey = this.getString(R.string.provider_lang_key)
+                val activeLanguages = settingsManager
+                    .getStringSet(languageKey, hashSetOf("en"))
+                    ?.toHashSet() ?: hashSetOf("en")
+                installedApis
+                    .filter { it.name in newlyInstalled }
+                    .map { it.lang }
+                    .forEach { activeLanguages.add(it) }
+
                 settingsManager.edit()
                     .putStringSet(providerKey, set)
+                    .putStringSet(languageKey, activeLanguages)
                     .putStringSet(seenKey, previouslySeen + installedNames)
                     .apply()
             }
 
-            val activeLangs = getApiProviderLangSettings()
+            val activeLangs = this.getApiProviderLangSettings()
             val list = HashSet<String>()
             for (name in set) {
                 val api = getApiFromNameNull(name) ?: continue

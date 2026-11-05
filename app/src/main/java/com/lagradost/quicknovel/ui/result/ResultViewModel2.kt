@@ -88,6 +88,7 @@ sealed class ResultPageAction {
     data class SetBookmark(val type: ReadType) : ResultPageAction()
     object OpenBookmark : ResultPageAction()
     object DismissDialog : ResultPageAction()
+    object Retry : ResultPageAction()
     object ExpandReviews : ResultPageAction()
     data class ResultAction(val action: SearchResponseAction) : ResultPageAction()
     data class ChapterAction(
@@ -167,34 +168,7 @@ class ResultViewModel2(
     }
 
     init {
-        viewModelScope.launch {
-            api.loadResult(url).onFailure { error ->
-                updateState { copy(responseError = error, loadingResponse = false) }
-            }.onSuccess { value ->
-                val id = value.id ?: throw IllegalStateException("loadResult must give an id")
-                val bookmarkState = getBookmarkState(id)
-                updateState {
-                    copy(
-                        response = value,
-                        loadingResponse = false,
-                        responseError = null,
-                        bookmark = bookmarkState,
-                        chapters = newChaptersList(value)
-                    )
-                }
-
-                // Mark as opened
-                ImmutableSearchResponse.setTimeOfPageOpened(id, System.currentTimeMillis())
-                BookDownloader2.openChanged(id)
-
-                // When we open this we can update the cached data in downloads
-                if (bookmarkState != ReadType.NONE) {
-                    setBookmarkData(id, value)
-                    BookDownloader2.bookmarkChanged(id)
-                }
-            }
-        }
-
+        loadNovel()
         BookDownloader2.downloadProgressChanged += this::onDownloadStateChange
         BookDownloader2.downloadRemoved += this::onDownloadRemoved
         BookDownloader2.downloadDataChanged += this::onDownloadAdded
@@ -210,6 +184,33 @@ class ResultViewModel2(
         BookDownloader2.bookmarkChanged -= this::onBookmarkChanged
         BookDownloader2.refreshingChanged -= this::onRefreshingChanged
         BookDownloader2.chapterReadChanged -= this::onChapterChanged
+    }
+
+    private fun loadNovel() {
+        viewModelScope.launch {
+            updateState { copy(loadingResponse = true, responseError = null) }
+            api.loadResult(url).onFailure { error ->
+                updateState { copy(responseError = error, loadingResponse = false) }
+            }.onSuccess { value ->
+                val id = value.id ?: throw IllegalStateException("loadResult must give an id")
+                val bookmarkState = getBookmarkState(id)
+                updateState {
+                    copy(
+                        response = value,
+                        loadingResponse = false,
+                        responseError = null,
+                        bookmark = bookmarkState,
+                        chapters = newChaptersList(value)
+                    )
+                }
+                ImmutableSearchResponse.setTimeOfPageOpened(id, System.currentTimeMillis())
+                BookDownloader2.openChanged(id)
+                if (bookmarkState != ReadType.NONE) {
+                    setBookmarkData(id, value)
+                    BookDownloader2.bookmarkChanged(id)
+                }
+            }
+        }
     }
 
     fun onDownloadStateChange(data: Pair<Int, DownloadProgressState>) = viewModelScope.launch {
@@ -294,6 +295,8 @@ class ResultViewModel2(
                     copy(dialog = null)
                 }
             }
+
+            ResultPageAction.Retry -> loadNovel()
 
             is ResultPageAction.SetBookmark -> {
                 val response = state.value.response

@@ -3,7 +3,7 @@ name: Android debug APK
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [master, fix/lnreader-extension-compatibility]
   pull_request:
     branches: [master]
 
@@ -11,7 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: quicknovel-android-build
+  # Keep master and pull-request builds from blocking one another.
+  group: quicknovel-android-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

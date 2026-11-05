@@ -452,6 +452,38 @@ data class LiveChapterData(
     }
 }
 
+data class TextReplacementRule(
+    val find: String,
+    val replace: String,
+)
+
+private const val TEXT_REPLACEMENTS_KEY = "reader_text_replacements"
+
+/**
+ * Converts both current rule objects and legacy JSON/Jackson map values into
+ * safe reader rules. Kept pure so persisted-data migration is unit-testable.
+ */
+internal fun normalizeTextReplacementRules(stored: Any?): List<TextReplacementRule> {
+    val entries = when (stored) {
+        is Iterable<*> -> stored
+        is Map<*, *> -> listOf(stored)
+        else -> return emptyList()
+    }
+
+    return entries.mapNotNull { entry ->
+        when (entry) {
+            is TextReplacementRule -> entry
+            is Map<*, *> -> {
+                val find = (entry["find"] ?: entry["Find"]) as? String
+                val replace = (entry["replace"] ?: entry["Replace"]) as? String ?: ""
+                find?.takeIf { it.isNotBlank() }?.let { TextReplacementRule(it, replace) }
+            }
+            else -> null
+        }
+    }
+}
+
+
 data class ChapterUpdate(
     val data: ArrayList<SpanDisplay>,
     val seekToDesired: Boolean
@@ -913,6 +945,13 @@ class ReadActivityViewModel : ViewModel() {
                         rendered = mlRender
                         spans = mlSpans
                     }
+
+                    // Apply user corrections after optional machine translation so rules can
+                    // repair recurring MTL wording while keeping all text styling spans intact.
+                    applyTextReplacements(rendered, spans).let { (replacedRender, replacedSpans) ->
+                        rendered = replacedRender
+                        spans = replacedSpans
+                    }
                 }
 
                 LiveChapterData(
@@ -971,6 +1010,61 @@ class ReadActivityViewModel : ViewModel() {
         return builder to out
     }
 
+
+
+    fun getTextReplacements(): List<TextReplacementRule> {
+        // Preferences written through Jackson can be read back as
+        // ArrayList<LinkedHashMap<String, Any>> because the generic element type
+        // is erased. Never cast those map values directly to TextReplacementRule.
+        val stored: Any? = getKey<Any>(TEXT_REPLACEMENTS_KEY)
+        val rules = normalizeTextReplacementRules(stored)
+
+        // Migrate legacy map-backed values to the current typed representation.
+        if (stored is Map<*, *> || (stored is Iterable<*> && stored.any { it is Map<*, *> })) {
+            setKey(TEXT_REPLACEMENTS_KEY, rules)
+        }
+        return rules
+    }
+
+    fun saveTextReplacements(rules: List<TextReplacementRule>) {
+        val cleaned = rules.filter { it.find.isNotBlank() }
+        setKey(TEXT_REPLACEMENTS_KEY, cleaned)
+        reloadChapter(currentIndex)
+    }
+
+    private fun applyTextReplacements(
+        rendered: Spanned,
+        input: ArrayList<TextSpan>
+    ): Pair<Spanned, ArrayList<TextSpan>> {
+        val rules = getTextReplacements()
+        if (rules.isEmpty()) return rendered to input
+
+        val builder = SpannableStringBuilder()
+        val output = ArrayList<TextSpan>(input.size)
+        input.forEach { original ->
+            val text = SpannableStringBuilder(original.text)
+            // Never modify image spans or their embedded drawable metadata.
+            if (text.getSpans<AsyncDrawableSpan>().isEmpty()) {
+                rules.forEach { rule ->
+                    if (rule.find.isNotEmpty()) {
+                        var from = 0
+                        while (from <= text.length - rule.find.length) {
+                            val start = text.indexOf(rule.find, from, ignoreCase = true)
+                            if (start < 0) break
+                            text.replace(start, start + rule.find.length, rule.replace)
+                            from = start + rule.replace.length
+                        }
+                    }
+                }
+            }
+            val start = builder.length
+            builder.append(text)
+            val end = builder.length
+            builder.append('\n')
+            output.add(TextSpan(text, start, end, original.index, original.innerIndex))
+        }
+        return builder to output
+    }
 
     @Throws(MLException::class)
     private suspend fun translate(
