@@ -126,12 +126,13 @@ class WebViewResolver(
         url: String,
         referer: String? = null,
         method: String = "GET",
-        requestCallBack: (Request) -> Boolean = { false },
         completionStabilityDelay: kotlin.time.Duration = 5.seconds,
+        requestCallBack: (Request) -> Boolean = { false },
     ): Pair<Request?, List<Request>> {
         val result = resolveUsingWebView(
             request = requestCreator(method, url, referer = referer),
-            requestCallBack = requestCallBack
+            requestCallBack = requestCallBack,
+            completionStabilityDelay = completionStabilityDelay,
         )
         return (result.first as? Request) to result.second
     }
@@ -144,7 +145,8 @@ class WebViewResolver(
     @SuppressLint("SetJavaScriptEnabled")
     suspend fun resolveUsingWebView(
         request: Request,
-        requestCallBack: (Request) -> Boolean = { false }
+        requestCallBack: (Request) -> Boolean = { false },
+        completionStabilityDelay: kotlin.time.Duration = 5.seconds,
     ): Pair<Any?, List<Request>> {
         val url = request.url.toString()
         val headers = request.headers
