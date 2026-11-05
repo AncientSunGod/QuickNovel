@@ -29,11 +29,11 @@ class ExtensionMainAPITest {
                     "searchNovels" -> """[{"name":"Paged Novel","path":"series","cover":"https://example.com/cover.jpg"}]"""
                     "parseNovel" -> """{"name":"Paged Novel","path":"series","cover":"https://example.com/cover.jpg","rating":4.5,"status":"On Hiatus","totalPages":3,"chapters":[{"name":"Chapter 1","path":"chapter-1"}]}"""
                     "parsePage" -> {
-                        assertTrue("LNReader parsePage receives a numeric page number", args.get(1) is Int)
-                        when (args.getInt(1)) {
-                            2 -> """{"chapters":[{"name":"Chapter 2","path":"chapter-2"}]}"""
-                            3 -> """{"chapters":[{"name":"Chapter 3","path":"chapter-3"}]}"""
-                            else -> throw AssertionError("Unexpected chapter page: ${args.get(1)}")
+                        assertTrue("LNReader parsePage receives a string page number", args.get(1) is String)
+                        when (args.getString(1)) {
+                            "2" -> """{"chapters":[{"name":"Chapter 2","path":"chapter-2"}]}"""
+                            "3" -> """{"chapters":[{"name":"Chapter 3","path":"chapter-3"}]}"""
+                            else -> throw AssertionError("Unexpected chapter page: ${args.getString(1)}")
                         }
                     }
                     else -> null
