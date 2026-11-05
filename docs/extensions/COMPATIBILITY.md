@@ -73,3 +73,15 @@ Before this work is considered release-ready:
 - [LNReader plugin documentation](https://github.com/LNReader/lnreader-plugins/tree/master/docs)
 - [LNReader v3 plugin manifest](https://raw.githubusercontent.com/LNReader/lnreader-plugins/plugins/v3.0.0/.dist/plugins.min.json)
 - [Android JavaScriptEngine documentation](https://developer.android.com/develop/ui/views/layout/webapps/jsengine)
+
+## HTTP 403 recovery and session behavior
+
+The extension HTTP bridge uses the Android WebView user agent and same-host browser request hints where available. It reads the app WebView cookie jar before each request and stores response `Set-Cookie` values back into that jar. On the first 403 for an imported extension, it may open the same URL in the app's WebView resolver and retry the request once using the browser session.
+
+A retry is not a guarantee of access. If the site still returns 403, requires an account, or denies the app/browser session, the extension must surface the denial. Do not treat a 403 response as an empty successful result.
+
+For diagnosis, record the extension ID, requested URL host/path (never log cookie or authorization values), HTTP status, response content type, and whether the WebView recovery path ran. Verify the behavior against more than one extension and distinguish mocked tests from real-device/live-site tests.
+
+## Saved text replacement migration
+
+Older preference data may contain JSON objects materialized as `LinkedHashMap` rather than typed `TextReplacementRule` instances. The reader normalizes legacy `find`/`replace` maps before applying rules and writes the normalized list back to preferences. Keep this migration backward-compatible; do not clear the user's saved rules to work around deserialization errors.
