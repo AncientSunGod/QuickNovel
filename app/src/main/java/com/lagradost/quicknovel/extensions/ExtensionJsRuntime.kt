@@ -815,6 +815,8 @@ object ExtensionJsRuntime {
                       return urlencode;
                     }
                     if (name === '@libs/defaultCover') return {defaultCover: ''};
+                    // Published NovelFire-family bundles still import this historical alias.
+                    if (name === '@/types/constants') return {defaultCover: ''};
                     if (name === '@libs/novelStatus') return {
                       NovelStatus: {
                         Unknown:'Unknown', Ongoing:'Ongoing', Completed:'Completed',
