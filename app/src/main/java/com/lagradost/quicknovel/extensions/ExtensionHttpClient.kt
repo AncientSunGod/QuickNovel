@@ -1,6 +1,8 @@
 package com.lagradost.quicknovel.extensions
 
 import android.webkit.CookieManager
+import com.lagradost.quicknovel.network.WebViewResolver
+import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.InetAddress
@@ -46,6 +48,14 @@ object ExtensionHttpClient {
         "content-type",
         "x-requested-with",
         "x-csrf-token",
+        "sec-ch-ua",
+        "sec-ch-ua-mobile",
+        "sec-ch-ua-platform",
+        "sec-fetch-dest",
+        "sec-fetch-mode",
+        "sec-fetch-site",
+        "sec-fetch-user",
+        "upgrade-insecure-requests",
     )
 
     /**
@@ -96,14 +106,30 @@ object ExtensionHttpClient {
                 key to value.take(MAX_HEADER_VALUE_LENGTH)
             }
 
-        repeat(MAX_REDIRECTS + 1) { redirectIndex ->
+        // A few sites return 403 to a plain HTTP client but allow a real browser
+        // session after its normal page scripts and any interactive verification run.
+        // Retry at most once per extension request; never suppress a server denial.
+        var webViewRecoveryAttempted = false
+        repeat(MAX_REDIRECTS + 2) { redirectIndex ->
             val connection = (URL(currentUrl).openConnection() as HttpURLConnection)
             try {
                 connection.instanceFollowRedirects = false
                 connection.requestMethod = currentMethod
                 connection.connectTimeout = CONNECT_TIMEOUT_MS
                 connection.readTimeout = READ_TIMEOUT_MS
-                connection.setRequestProperty("User-Agent", com.lagradost.quicknovel.USER_AGENT)
+                val requestHost = URL(currentUrl).host.lowercase(Locale.ROOT)
+                val browserUserAgent = runCatching {
+                    WebViewResolver.getWebViewUserAgent()
+                }.getOrNull()
+                connection.setRequestProperty(
+                    "User-Agent",
+                    browserUserAgent?.takeIf { it.isNotBlank() }
+                        ?: com.lagradost.quicknovel.USER_AGENT
+                )
+                // Reuse browser request hints captured from a prior in-app WebView
+                // session for this host. Explicit extension headers still take priority.
+                val browserHeaders = WebViewResolver.capturedHeaders[requestHost].orEmpty()
+                val effectiveHeaders = browserHeaders + safeHeaders
                 connection.setRequestProperty("Connection", "keep-alive")
                 // Send ordinary navigation context by default. A number of novel sites
                 // reject bare programmatic requests when Accept/Referer are absent.
@@ -128,7 +154,7 @@ object ExtensionHttpClient {
                 ) {
                     connection.setRequestProperty("Cookie", webViewCookies)
                 }
-                safeHeaders.forEach { (key, value) ->
+                effectiveHeaders.forEach { (key, value) ->
                     if (!value.contains('\r') && !value.contains('\n')) {
                         connection.setRequestProperty(key, value)
                     }
@@ -142,6 +168,26 @@ object ExtensionHttpClient {
                 }
 
                 val status = connection.responseCode
+                if (status == 403 && !webViewRecoveryAttempted && allowedHosts != null) {
+                    webViewRecoveryAttempted = true
+                    val targetHost = URL(currentUrl).host
+                    val browserSessionOpened = runCatching {
+                        // This overload preserves existing WebView cookies and uses the
+                        // app's browser resolver. The server still decides whether access
+                        // is allowed; a second 403 is returned unchanged to the extension.
+                        runBlocking {
+                            WebViewResolver().resolveUsingWebView(
+                                url = currentUrl,
+                                requestCallBack = { request ->
+                                    request.url.host.equals(targetHost, ignoreCase = true)
+                                },
+                            )
+                        }
+                    }.isSuccess
+                    if (browserSessionOpened) {
+                        return@repeat
+                    }
+                }
                 if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
                     val location = connection.getHeaderField("Location")
                         ?: throw IllegalStateException("Extension request returned a redirect without a location.")
