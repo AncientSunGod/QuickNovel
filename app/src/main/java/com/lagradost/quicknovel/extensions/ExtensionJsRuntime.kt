@@ -542,17 +542,48 @@ object ExtensionJsRuntime {
                         Object.defineProperty(selection, 'length', {get:function(){return call('length',id);}});
                         selection.text = function(){return call('text',id);};
                         selection.html = function(){return call('html',id);};
-                        selection.attr = function(name){return call('attr',id,name);};
+                        selection.attr = function(name,value){
+                          if (arguments.length > 1) { call('attrSet',id,JSON.stringify([name,value])); return selection; }
+                          return call('attr',id,name);
+                        };
                         selection.hasClass = function(name){return call('hasClass',id,name);};
                         selection.first = function(){return wrap(call('first',id));};
                         selection.last = function(){return wrap(call('last',id));};
                         selection.eq = function(index){return wrap(call('eq',id,'',index));};
-                        selection.find = function(selector){return wrap(call('find',id,selector));};
+                        selection.find = function(selector){
+                          var found=wrap(call('find',id,selector)); found._qnPrevId=id; return found;
+                        };
                         selection.children = function(selector){return wrap(call('children',id,selector || ''));};
                         selection.contents = function(){return wrap(call('contents',id));};
                         selection.parent = function(){return wrap(call('parent',id));};
                         selection.next = function(){return wrap(call('next',id));};
                         selection.prev = function(){return wrap(call('prev',id));};
+                        selection.toArray = function(){return selection.get();};
+                        selection.addBack = function(){
+                          return selection._qnPrevId == null ? selection :
+                            wrap(call('merge',id,JSON.stringify([id,selection._qnPrevId])));
+                        };
+                        selection.filter = function(predicate){
+                          if (typeof predicate === 'function') {
+                            var ids=[];
+                            for (var i=0;i<selection.length;i++) {
+                              var item=wrapNode(call('eq',id,'',i));
+                              if (predicate.call(item,i,item)) ids.push(item._qnSelectionId);
+                            }
+                            return wrap(call('merge',id,JSON.stringify(ids)));
+                          }
+                          return wrap(call('filter',id,String(predicate)));
+                        };
+                        selection.has = function(selector){return wrap(call('has',id,String(selector)));};
+                        selection.removeAttr = function(name){call('removeAttr',id,name);return selection;};
+                        selection.replaceWith = function(content){
+                          var html=content && content._qnSelectionId != null
+                            ? call('outerHtml',content._qnSelectionId) : String(content == null ? '' : content);
+                          call('replaceWith',id,html); return selection;
+                        };
+                        selection.before = function(content){call('before',id,String(content == null ? '' : content));return selection;};
+                        selection.after = function(content){call('after',id,String(content == null ? '' : content));return selection;};
+                        selection.append = function(content){call('append',id,String(content == null ? '' : content));return selection;};
                         selection.remove = function(){call('remove',id);return selection;};
                         selection.each = function(callback) {
                           for (var i=0;i<selection.length;i++) {
@@ -578,6 +609,11 @@ object ExtensionJsRuntime {
                       function wrapNode(id) {
                         var node = wrap(id);
                         Object.defineProperty(node, 'type', {get:function(){return call('nodeType',id);}});
+                        Object.defineProperty(node, 'nodeType', {get:function(){
+                          var type=call('nodeType',id);
+                          return type==='tag'?1:type==='text'?3:type==='comment'?8:9;
+                        }});
+                        Object.defineProperty(node, 'name', {get:function(){return call('nodeName',id);}});
                         Object.defineProperty(node, 'data', {get:function(){return call('nodeData',id);}});
                         Object.defineProperty(node, 'next', {get:function(){
                           var nextId = call('nextNode',id);
@@ -1099,6 +1135,22 @@ object ExtensionJsRuntime {
                 "next" -> storeNodes(nodes.filterIsInstance<Element>().mapNotNull { it.nextElementSibling() })
                 "prev" -> storeNodes(nodes.filterIsInstance<Element>().mapNotNull { it.previousElementSibling() })
                 "nextNode" -> storeNodes(nodes.firstOrNull()?.let { sibling(it, 1) }?.let(::listOf).orEmpty())
+                "merge" -> {
+                    val ids = JSONArray(value.orEmpty())
+                    storeNodes((0 until ids.length()).flatMap { selections[ids.optInt(it)].orEmpty() })
+                }
+                "filter" -> {
+                    val selector = value.orEmpty()
+                    require(selector.length <= maxSelectorChars) { "CSS selector is too long." }
+                    storeNodes(nodes.filterIsInstance<Element>().filter { it.`is`(selector) })
+                }
+                "has" -> {
+                    val selector = value.orEmpty()
+                    require(selector.isNotBlank() && selector.length <= maxSelectorChars) {
+                        "CSS selector is empty or too long."
+                    }
+                    storeNodes(nodes.filterIsInstance<Element>().filter { it.select(selector).isNotEmpty() })
+                }
                 "first" -> storeNodes(nodes.take(1))
                 "last" -> storeNodes(nodes.takeLast(1))
                 "eq" -> {
@@ -1117,6 +1169,40 @@ object ExtensionJsRuntime {
                     }.orEmpty()
                 "attr" -> nodes.filterIsInstance<Element>().firstOrNull()?.let { element ->
                     value?.let { if (element.hasAttr(it)) element.attr(it).take(100_000) else null }
+                }
+                "attrSet" -> {
+                    val pair = JSONArray(value.orEmpty())
+                    val name = pair.optString(0)
+                    val attributeValue = pair.optString(1)
+                    require(name.isNotBlank() && name.length <= 200 && attributeValue.length <= 100_000) {
+                        "HTML attribute name or value is invalid."
+                    }
+                    nodes.filterIsInstance<Element>().forEach { it.attr(name, attributeValue) }
+                    selectionId
+                }
+                "removeAttr" -> {
+                    nodes.filterIsInstance<Element>().forEach { it.removeAttr(value.orEmpty()) }
+                    selectionId
+                }
+                "nodeName" -> nodes.firstOrNull()?.let { node ->
+                    if (node is Element) node.tagName() else node.nodeName()
+                }
+                "outerHtml" -> nodes.firstOrNull()?.outerHtml()?.take(100_000)
+                "replaceWith" -> {
+                    nodes.forEach { node -> node.before(value.orEmpty()); node.remove() }
+                    selectionId
+                }
+                "before" -> {
+                    nodes.forEach { it.before(value.orEmpty()) }
+                    selectionId
+                }
+                "after" -> {
+                    nodes.asReversed().forEach { it.after(value.orEmpty()) }
+                    selectionId
+                }
+                "append" -> {
+                    nodes.filterIsInstance<Element>().forEach { it.append(value.orEmpty()) }
+                    selectionId
                 }
                 "hasClass" -> nodes.filterIsInstance<Element>().firstOrNull()?.hasClass(value.orEmpty()) ?: false
                 "remove" -> {
