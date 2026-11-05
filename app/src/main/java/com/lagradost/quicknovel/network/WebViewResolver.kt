@@ -127,6 +127,7 @@ class WebViewResolver(
         referer: String? = null,
         method: String = "GET",
         requestCallBack: (Request) -> Boolean = { false },
+        completionStabilityDelay: kotlin.time.Duration = 5.seconds,
     ): Pair<Request?, List<Request>> {
         val result = resolveUsingWebView(
             request = requestCreator(method, url, referer = referer),
@@ -280,7 +281,9 @@ class WebViewResolver(
                             if (scriptToFinish == null) {
                                 stabilityJob?.cancel()
                                 stabilityJob = main {
-                                    delay(5.seconds)
+                                    // Give browser-driven anti-bot scripts enough time to finish
+                                    // before returning cookies/session state to the HTTP retry.
+                                    delay(completionStabilityDelay)
                                     deferredResponse.complete(fixedRequest to extraRequestList)
                                 }
                             }
