@@ -36,8 +36,19 @@ internal fun parseFreeWebNovelTocAjaxResponse(responseText: String): FreeWebNove
 
     val json = runCatching { JSONObject(trimmed) }.getOrNull()
         ?: return FreeWebNovelTocAjaxPage(trimmed, 1)
-    val html = json.optString("html", "").takeIf { it.isNotBlank() }.orEmpty()
-    val totalPages = json.optInt("totalPage", json.optInt("totalPages", 1)).coerceAtLeast(1)
+    val payload = json.optJSONObject("data")
+        ?: json.optJSONObject("result")
+        ?: json
+    val html = sequenceOf(
+        payload.optString("html", ""),
+        payload.optString("content", ""),
+        json.optString("html", ""),
+        json.optString("data", ""),
+    ).firstOrNull { it.isNotBlank() }.orEmpty()
+    val totalPages = payload.optInt(
+        "totalPage",
+        payload.optInt("totalPages", json.optInt("totalPage", json.optInt("totalPages", 1)))
+    ).coerceAtLeast(1)
     return FreeWebNovelTocAjaxPage(html, totalPages)
 }
 
