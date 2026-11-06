@@ -1218,7 +1218,7 @@ object ExtensionJsRuntime {
                         .replace("\\", "\\\\")
                         .replace("\"", "\\\"")
                     ":contains(\"$text\")"
-                }
+                }.replace(Regex("""\+\s*:contains"""), "+ :contains")
 
         fun parseEvents(html: String): String {
             require(html.length <= maxHtmlChars) { "HTML input exceeds the 2 MB limit." }
