@@ -405,6 +405,19 @@ fun MainPageSearchBar(
                     }
                 }
 
+                if (!openQuery) {
+                    IconButton(
+                        onClick = { action(MainPageAction.Refresh) },
+                        enabled = !loading,
+                    ) {
+                        Text(
+                            text = "↻",
+                            fontSize = 24.sp,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                }
+
                 IconButton(onClick = {
                     searchIsRow.set(!searchIsRowState)
                 }) {
