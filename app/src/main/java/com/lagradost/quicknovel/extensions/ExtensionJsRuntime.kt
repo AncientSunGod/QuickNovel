@@ -1208,17 +1208,15 @@ object ExtensionJsRuntime {
         private val documents = mutableMapOf<Int, Document>()
         private val selections = mutableMapOf<Int, List<Node>>()
 
-        // LNReader bundles commonly use Cheerio's jQuery-style :icontains(text)
-        // extension. Jsoup supports the equivalent case-insensitive :contains(text),
-        // but rejects :icontains as an unknown pseudo-selector.
+        // LNReader's :icontains is not part of Jsoup's selector dialect. Translate it
+        // to a Java-regex selector with case-insensitive matching, preserving arbitrary
+        // text (including punctuation) as literal content rather than regex syntax.
         private fun normalizeSelector(selector: String): String =
             Regex(""":icontains\(\s*(['"])(.*?)\1\s*\)""", RegexOption.IGNORE_CASE)
                 .replace(selector) { match ->
-                    val text = match.groupValues[2]
-                        .replace("\\", "\\\\")
-                        .replace("\"", "\\\"")
-                    ":contains(\"$text\")"
-                }.replace(Regex("""\+\s*:contains"""), "+ :contains")
+                    val literalText = Regex.escape(match.groupValues[2])
+                    ":matches((?i).*\${literalText}.*)"
+                }.replace(Regex("""\+\s*:matches"""), "+ :matches")
 
         fun parseEvents(html: String): String {
             require(html.length <= maxHtmlChars) { "HTML input exceeds the 2 MB limit." }
@@ -1277,7 +1275,7 @@ object ExtensionJsRuntime {
                     storeNodes(found)
                 }
                 "find" -> {
-                    val selector = value.orEmpty()
+                    val selector = normalizeSelector(value.orEmpty())
                     require(selector.isNotBlank() && selector.length <= maxSelectorChars) {
                         "CSS selector is empty or too long."
                     }
@@ -1304,7 +1302,7 @@ object ExtensionJsRuntime {
                     storeNodes((0 until ids.length()).flatMap { selections[ids.optInt(it)].orEmpty() })
                 }
                 "filter" -> {
-                    val selector = value.orEmpty()
+                    val selector = normalizeSelector(value.orEmpty())
                     require(selector.length <= maxSelectorChars) { "CSS selector is too long." }
                     storeNodes(nodes.filterIsInstance<Element>().filter { it.`is`(selector) })
                 }
