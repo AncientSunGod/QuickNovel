@@ -30,6 +30,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.scale
 import androidx.core.net.toUri
@@ -666,18 +667,19 @@ object BookDownloader2Helper {
                 return null
             }
 
-            if (!checkWrite()) {
-                requestRW()
-                if (!checkWrite()) return null
-            }
-            val outputDir: File = this.cacheDir
+            // Stream manifests live in the app's private cache. They do not need
+            // legacy external-storage permissions. A file:// URI cannot be opened
+            // by ReadActivity2 through ContentResolver; expose it through our
+            // configured FileProvider instead.
             val fileName = getFilePath(data.meta, -1)
-
-            val outputFile = File(outputDir, fileName)
+            val outputFile = File(cacheDir, fileName)
             outputFile.parentFile?.mkdirs()
-            outputFile.createNewFile()
             outputFile.writeText(mapper.writeValueAsString(data))
-            return outputFile.toUri()
+            FileProvider.getUriForFile(
+                this,
+                "$packageName.provider",
+                outputFile
+            )
         } catch (e: Exception) {
             return null
         }
