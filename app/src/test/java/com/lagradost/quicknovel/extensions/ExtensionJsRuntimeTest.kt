@@ -934,4 +934,23 @@ class ExtensionJsRuntimeTest {
         }
     }
 
+
+    @Test
+    fun supportsLnReaderCaseInsensitiveContainsSelector() {
+        val (extension, file) = extension(
+            "var cheerio = require('cheerio'); " +
+                "module.exports = { searchNovels: function() { " +
+                "var $ = cheerio.load('<div id=\"Icp_instance_0\"></div><span>Complete</span>'); " +
+                "return [{name:$(\"#Icp_instance_0 +:icontains('complete')\").text(),path:'/faq'}]; " +
+                "} };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            val actual = JSONArray(result.json)
+            assertEquals(1, actual.length())
+            assertEquals("Complete", actual.getJSONObject(0).getString("name"))
+        } finally {
+            file.delete()
+        }
+    }
 }
