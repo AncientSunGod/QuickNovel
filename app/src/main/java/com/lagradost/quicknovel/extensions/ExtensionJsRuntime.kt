@@ -530,10 +530,10 @@ object ExtensionJsRuntime {
                             var parts = init.body._entries.map(function(entry) {
                               var fieldName = String(entry[0]).replace(/"/g, '%22');
                               return '--' + boundary + '\r\n' +
-                                'Content-Disposition: form-data; name="' + fieldName + '"\\r\\n\\r\\n' +
+                                'Content-Disposition: form-data; name="' + fieldName + '"\r\n\r\n' +
                                 String(entry[1]) + '\r\n';
                             });
-                            request.body = parts.join('') + '--' + boundary + '--\\r\\n';
+                            request.body = parts.join('') + '--' + boundary + '--\r\n';
                             var hasContentType = Object.keys(request.headers).some(function(key) {
                               return key.toLowerCase() === 'content-type';
                             });
