@@ -977,4 +977,24 @@ class ExtensionJsRuntimeTest {
         }
     }
 
+
+    @Test
+    fun supportsCheerioNextUntilSelectorUsedByFaqWiki() {
+        val (extension, file) = extension(
+            "var cheerio = require('cheerio'); " +
+                "module.exports = { searchNovels: function() { " +
+                "var $ = cheerio.load('<strong>author(s):</strong><p>Author A</p><p>More author detail</p><p><strong>genre:</strong> Fantasy</p><p>Do not include</p>'); " +
+                "var nodes = $('strong').first().parent().nextUntil('p:has(strong)'); " +
+                "return [{name:nodes.map(function(i,node){return $(node).text().trim();}).get().join('|'),path:'/next-until'}]; " +
+                "} };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            val item = JSONArray(result.json).getJSONObject(0)
+            assertEquals("Author A|More author detail", item.getString("name"))
+        } finally {
+            file.delete()
+        }
+    }
+
 }
