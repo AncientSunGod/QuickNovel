@@ -22,7 +22,7 @@ class FreeWebNovelProviderTest {
             """
             <ul id="idData">
               <li><a href="/novel/sample/chapter-1" title="Chapter 1">Chapter One</a></li>
-              <li><a href="chapter-2">Chapter Two</a></li>
+              <li><a href="/novel/sample/chapter-2">Chapter Two</a></li>
               <li><a href="">Empty link</a></li>
               <li><a href="/novel/sample/chapter-3">Chapter Three</a></li>
             </ul>
@@ -91,6 +91,35 @@ class FreeWebNovelProviderTest {
         )
 
         assertEquals("31415", extractFreeWebNovelArticleId(document))
+    }
+
+
+    @Test
+    fun parsesArchiveOptionsReturnedByChapterListApi() {
+        val document = Jsoup.parse(
+            """
+            <select>
+              <option value="/novel/sample/chapter-1">Chapter One</option>
+              <option value="novel/sample/chapter-2">Chapter Two</option>
+            </select>
+            """.trimIndent(),
+            "https://freewebnovel.com/api/chapterlist.php",
+        )
+
+        val chapters = parseFreeWebNovelTocLinks(
+            document,
+            siteRoot = "https://freewebnovel.com",
+            includeOptions = true,
+        )
+
+        assertEquals(2, chapters.size)
+        assertEquals(
+            listOf(
+                "https://freewebnovel.com/novel/sample/chapter-1",
+                "https://freewebnovel.com/novel/sample/chapter-2",
+            ),
+            chapters.map { it.url },
+        )
     }
 
 }
