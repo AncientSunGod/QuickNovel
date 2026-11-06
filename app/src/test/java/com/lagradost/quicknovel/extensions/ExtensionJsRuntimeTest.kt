@@ -377,6 +377,42 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsSimpleFormDataPostsUsedByLnReaderMultisrcPlugins() {
+        val (extension, file) = extension(
+            "var fetch = require('@libs/fetch'); " +
+                "module.exports = { parseNovel: function() { " +
+                "var form = new FormData(); form.append('action','manga_get_chapters'); " +
+                "form.append('manga','12345'); " +
+                "return fetch.fetchApi('https://example.com/ajax', {method:'POST',body:form})" +
+                ".then(function(response) { return {name:String(response.status)}; }); } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension = extension,
+                operation = "parseNovel",
+                argumentsJson = "[]",
+                testRequestOverride = { url, method, headers, body ->
+                    assertEquals("https://example.com/ajax", url)
+                    assertEquals("POST", method)
+                    assertTrue(headers["Content-Type"].orEmpty().startsWith("multipart/form-data; boundary="))
+                    assertTrue(body.orEmpty().contains("name=\"action\""))
+                    assertTrue(body.orEmpty().contains("manga_get_chapters"))
+                    assertTrue(body.orEmpty().contains("12345"))
+                    ExtensionHttpClient.TextResponse(
+                        url = url,
+                        statusCode = 200,
+                        contentType = "text/plain",
+                        body = "ok",
+                    )
+                },
+            ).getOrThrow()
+            assertTrue(result.json.contains("200"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun rejectsUnsupportedFetchMethods() {
         val (extension, file) = extension(
             "var fetch = require('@libs/fetch'); " +
