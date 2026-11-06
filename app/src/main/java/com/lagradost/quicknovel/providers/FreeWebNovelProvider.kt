@@ -41,6 +41,18 @@ internal fun parseFreeWebNovelTocAjaxResponse(responseText: String): FreeWebNove
     return FreeWebNovelTocAjaxPage(html, totalPages)
 }
 
+/** Parse the chapter-list markup used by both the initial page and AJAX fragments. */
+internal fun parseFreeWebNovelTocLinks(document: Document): List<ChapterData> =
+    document.select(
+        "ul#idData a[href], #list-chapter ul.ul-list5 a.con[href], ul#idData.ul-list5 a.con[href]"
+    ).mapNotNull { link ->
+        val href = link.absUrl("href").takeIf { it.isNotBlank() }
+            ?: return@mapNotNull null
+        val title = link.attr("title").trim().ifBlank { link.text().trim() }
+        if (title.isBlank()) return@mapNotNull null
+        newChapterData(title, href)
+    }.distinctBy { it.url }
+
 open class FreewebnovelProvider : MainAPI() {
     private companion object { const val MAX_TOC_PAGES = 200 }
     override val name = "FreeWebNovel"
@@ -136,15 +148,8 @@ open class FreewebnovelProvider : MainAPI() {
         val chaptersByUrl = linkedMapOf<String, ChapterData>()
 
         fun parseTocPage(tocDocument: Document) {
-            tocDocument.select(
-                "ul#idData a, #list-chapter ul.ul-list5 a.con, ul#idData.ul-list5 a.con"
-            ).forEach { link ->
-                val href = link.attr("href").takeIf { it.isNotBlank() } ?: return@forEach
-                val chapterUrl = fixUrlNull(href) ?: return@forEach
-                val title = link.attr("title").trim().ifBlank { link.text().trim() }
-                if (title.isNotBlank()) {
-                    chaptersByUrl.putIfAbsent(chapterUrl, newChapterData(title, chapterUrl))
-                }
+            parseFreeWebNovelTocLinks(tocDocument).forEach { chapter ->
+                chaptersByUrl.putIfAbsent(chapter.url, chapter)
             }
         }
 
