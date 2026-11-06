@@ -1894,8 +1894,7 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
 
             bottomSheetDialog.show()
         }
-    }
         // Start asynchronous book loading only after the complete reader UI is ready.
         viewModel.init(intent, this)
-
+    }
 }
