@@ -672,7 +672,7 @@ object BookDownloader2Helper {
             // by ReadActivity2 through ContentResolver; expose it through our
             // configured FileProvider instead.
             val fileName = getFilePath(data.meta, -1)
-            val outputFile = File(cacheDir, fileName)
+            val outputFile = File(fileName)
             outputFile.parentFile?.mkdirs()
             outputFile.writeText(mapper.writeValueAsString(data))
             FileProvider.getUriForFile(
