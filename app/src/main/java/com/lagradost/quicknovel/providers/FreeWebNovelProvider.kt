@@ -164,7 +164,7 @@ open class FreewebnovelProvider : MainAPI() {
             if (chapterName.isBlank()) return@mapNotNull null
             newChapterData(name = chapterName, url = chapterUrl)
         }.distinctBy { it.url }.sortedBy { chapter ->
-            Regex("""chapter[-_/]?(\\d+)""", RegexOption.IGNORE_CASE)
+            Regex("""chapter[-_/]?(\d+)""", RegexOption.IGNORE_CASE)
                 .find(chapter.url)?.groupValues?.getOrNull(1)?.toLongOrNull()
                 ?: Long.MAX_VALUE
         }
