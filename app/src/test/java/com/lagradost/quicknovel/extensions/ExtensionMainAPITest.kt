@@ -667,8 +667,7 @@ class ExtensionMainAPITest {
               <div class="entry-content">
                 <p><strong>description:</strong></p>
                 <p>A short sample description.</p>
-                <p><strong>author(s):</strong></p>
-                <p>Sample Author</p>
+                <p><strong>author(s):</strong> Sample Author</p>
                 <p><strong>genre:</strong> Fantasy</p>
               </div>
               <ul class="lcp_catlist">
