@@ -90,6 +90,26 @@ internal fun extractFreeWebNovelArticleId(document: Document): String? {
     }
 }
 
+/** Extract the chapter-pagination count emitted by FreeWebNovel's page script. */
+internal fun extractFreeWebNovelTotalChapters(document: Document): Int? {
+    document.selectFirst("#indexListPage")?.attr("data-total-chapters")
+        ?.toIntOrNull()?.takeIf { it > 0 }?.let { return it }
+
+    return document.select("script").firstNotNullOfOrNull { script ->
+        Regex("""totalChapters:\s*(\d+)""", RegexOption.IGNORE_CASE)
+            .find(script.data().ifBlank { script.html() })
+            ?.groupValues?.getOrNull(1)
+            ?.toIntOrNull()
+            ?.takeIf { it > 0 }
+    }
+}
+
+internal fun extractFreeWebNovelImageArticleId(imageUrl: String): String? =
+    Regex("""(\d+)s\.(?:jpe?g|png|webp)""", RegexOption.IGNORE_CASE)
+        .find(imageUrl)
+        ?.groupValues
+        ?.getOrNull(1)
+
 /** The upstream source prefers its Disqus identifier for the archive's acode. */
 internal fun extractFreeWebNovelAcode(document: Document, fallback: String): String =
     document.selectFirst("[data-disqus-identifier]")
@@ -208,14 +228,7 @@ open class FreewebnovelProvider : MainAPI() {
         // ?ajax=chapters&page= URL was not this source's endpoint contract.
         parseTocPage(doc)
 
-        val totalChapters = doc.selectFirst("#indexListPage")
-            ?.attr("data-total-chapters")
-            ?.toIntOrNull()
-            ?: doc.select("script").firstNotNullOfOrNull { script ->
-                Regex("""totalChapters:\\s*(\\d+)""")
-                    .find(script.data().ifBlank { script.html() })
-                    ?.groupValues?.getOrNull(1)?.toIntOrNull()
-            }
+        val totalChapters = extractFreeWebNovelTotalChapters(doc)
 
         val articleImageUrls = listOfNotNull(
             doc.selectFirst("meta[name=image]")?.attr("content"),
@@ -226,8 +239,7 @@ open class FreewebnovelProvider : MainAPI() {
         val novelId = extractFreeWebNovelArticleId(doc)
             ?: Regex("""(\d+)""").find(pageUrl)?.groupValues?.getOrNull(1)
             ?: articleImageUrls.firstNotNullOfOrNull { imageUrl ->
-                Regex("""(\\d+)s\\.(?:jpe?g|png|webp)""", RegexOption.IGNORE_CASE)
-                    .find(imageUrl)?.groupValues?.getOrNull(1)
+                extractFreeWebNovelImageArticleId(imageUrl)
             }
 
         if (!novelId.isNullOrBlank()) {
