@@ -1029,7 +1029,15 @@ class ReadActivityViewModel : ViewModel() {
     fun saveTextReplacements(rules: List<TextReplacementRule>) {
         val cleaned = rules.filter { it.find.isNotBlank() }
         setKey(TEXT_REPLACEMENTS_KEY, cleaned)
-        reloadChapter(currentIndex)
+
+        // Rebuild the reader from its cached chapter data. reloadChapter() forces
+        // a provider/network reload, which can make a saved text rule appear not to
+        // work when the source is slow, offline, or rejects the repeated request.
+        // refreshChapters() clears rendered chapter state but asks the book cache
+        // for the already downloaded chapter text again.
+        if (::book.isInitialized && currentIndex >= 0) {
+            refreshChapters()
+        }
     }
 
     private fun applyTextReplacements(
