@@ -53,6 +53,25 @@ internal fun parseFreeWebNovelTocLinks(document: Document): List<ChapterData> =
         newChapterData(title, href)
     }.distinctBy { it.url }
 
+/** Resolve the article identifier used by the current chapterlist.php endpoint. */
+internal fun extractFreeWebNovelArticleId(document: Document): String? {
+    val directId = sequenceOf(
+        document.selectFirst("#indexListPage")?.attr("data-novel-id"),
+        document.selectFirst("#indexListPage")?.attr("data-articleid"),
+        document.selectFirst("a.set-case.add")?.attr("data-articleid"),
+        document.selectFirst("[data-novel-id]")?.attr("data-novel-id"),
+        document.selectFirst("[data-articleid]")?.attr("data-articleid"),
+    ).firstOrNull { !it.isNullOrBlank() }
+    if (!directId.isNullOrBlank()) return directId
+
+    return document.select("script").firstNotNullOfOrNull { script ->
+        Regex("""sourceid\s*=\s*["']?(\d+)""", RegexOption.IGNORE_CASE)
+            .find(script.data().ifBlank { script.html() })
+            ?.groupValues
+            ?.getOrNull(1)
+    }
+}
+
 open class FreewebnovelProvider : MainAPI() {
     private companion object { const val MAX_TOC_PAGES = 200 }
     override val name = "FreeWebNovel"
@@ -210,8 +229,7 @@ open class FreewebnovelProvider : MainAPI() {
             doc.selectFirst("div.pic img")?.attr("src"),
             doc.selectFirst("picture source")?.attr("srcset")?.substringBefore(",")?.substringBefore(" "),
         )
-        val novelId = doc.selectFirst("a.set-case.add")?.attr("data-articleid")
-            ?.takeIf { it.isNotBlank() }
+        val novelId = extractFreeWebNovelArticleId(doc)
             ?: articleImageUrls.firstNotNullOfOrNull { imageUrl ->
                 Regex("""(\d+)s\.(?:jpe?g|png|webp)""", RegexOption.IGNORE_CASE)
                     .find(imageUrl)?.groupValues?.getOrNull(1)
