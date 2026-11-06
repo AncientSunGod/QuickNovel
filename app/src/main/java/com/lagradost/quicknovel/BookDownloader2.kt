@@ -684,11 +684,29 @@ object BookDownloader2Helper {
         forceReload: Boolean
     ): LoadedChapter? {
         val path = getFilePath(meta, index)
-        downloadIndividualChapter(
-            path, getApiFromName(meta.apiName), chapter, forceReload,
-            worker = WaitOrCancel()
-        )
+        val provider = getApiFromNameOrNull(meta.apiName)
+            ?: throw ErrorLoadingException(
+                "The original provider '${meta.apiName}' is no longer installed or available."
+            )
+        when (
+            downloadIndividualChapter(
+                path,
+                provider,
+                chapter,
+                forceReload,
+                worker = WaitOrCancel(),
+            )
+        ) {
+            DownloadResult.Success -> Unit
+            DownloadResult.Cancel -> throw kotlinx.coroutines.CancellationException(
+                "Chapter loading was cancelled."
+            )
+            DownloadResult.Failure -> throw ErrorLoadingException(
+                "Could not load '${chapter.name}' from ${meta.apiName}."
+            )
+        }
         return getChapter(path, index, getStripHtml(), false)
+            ?: throw ErrorLoadingException("The downloaded chapter file is invalid.")
     }
 
     @WorkerThread
