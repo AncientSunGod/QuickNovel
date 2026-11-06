@@ -50,7 +50,6 @@ import com.lagradost.quicknovel.BookDownloader2.LOCAL_EPUB
 import com.lagradost.quicknovel.BookDownloader2.LOCAL_EPUB_MIN_SIZE
 import com.lagradost.quicknovel.BookDownloader2Helper.IMPORT_SOURCE
 import com.lagradost.quicknovel.BookDownloader2Helper.IMPORT_SOURCE_PDF
-import com.lagradost.quicknovel.BookDownloader2Helper.createQuickStream
 import com.lagradost.quicknovel.BookDownloader2Helper.generateId
 import com.lagradost.quicknovel.BookDownloader2Helper.getDirectory
 import com.lagradost.quicknovel.BookDownloader2Helper.getGeneralCSStyleForEPUBs
@@ -1288,10 +1287,8 @@ object BookDownloader2 {
                 res.posterUrl,
                 res.data.toMutableList()
             )
-            // Keep the old manifest as a recovery path, but use the in-process session
-            // for normal launches so reader startup does not depend on URI deserialization.
-            val fallbackUri = activity?.createQuickStream(quickStream)
-            openQuickStream(quickStream, fallbackUri)
+            // Pass the chapter manifest directly; do not serialize a second copy.
+            openQuickStream(quickStream)
         }
     }
 
