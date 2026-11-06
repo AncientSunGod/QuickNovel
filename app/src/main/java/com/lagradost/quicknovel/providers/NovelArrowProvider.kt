@@ -285,7 +285,7 @@ class NovelArrowProvider : MainAPI() {
             }) {
             throw ErrorLoadingException("This title is not available in the reader.")
         }
-        val chapters = getChapters(novelId).ifEmpty {
+        val chapters = runCatching { getChapters(novelId) }.getOrDefault(emptyList()).ifEmpty {
             runCatching { getHtmlChapterFallback(info) }.getOrDefault(emptyList())
         }
         val synopsis = info.stringOrNull("novel_desc")?.let { html ->
