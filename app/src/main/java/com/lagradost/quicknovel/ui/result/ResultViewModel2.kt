@@ -17,6 +17,7 @@ import com.lagradost.quicknovel.BaseApplication.Companion.getKey
 import com.lagradost.quicknovel.BaseApplication.Companion.setKey
 import com.lagradost.quicknovel.BookDownloader2
 import com.lagradost.quicknovel.BookDownloader2.openQuickStream
+import com.lagradost.quicknovel.BookDownloader2Helper.createQuickStream
 import com.lagradost.quicknovel.ChapterData
 import com.lagradost.quicknovel.CommonActivity.activity
 import com.lagradost.quicknovel.DownloadActionType
@@ -396,7 +397,7 @@ class ResultViewModel2(
                     )
                     // The session payload is passed in-process; the old FileProvider
                     // manifest is generated only as a recovery path for process recreation.
-                    val fallbackUri = activity?.let { BookDownloader2Helper.createQuickStream(it, quickStream) }
+                    val fallbackUri = activity?.createQuickStream(quickStream)
 
                     ImmutableSearchResponse.addToHistory(response = action.response)
                     setKey(EPUB_CURRENT_POSITION, action.response.name, action.chapter.index)
