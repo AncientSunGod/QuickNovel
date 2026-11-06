@@ -1086,6 +1086,10 @@ class ReadActivityViewModel : ViewModel() {
         // deliberately ignores duplicate requests while an index is marked as loading.
         val targetIndex = desiredIndex?.index ?: currentIndex
         if (::book.isInitialized && targetIndex >= 0) {
+            val sourceName = (book as? QuickBook)?.data?.meta?.apiName ?: "Local EPUB"
+            CrashLog.updateContext(
+                "Text replacement rerender; source=$sourceName; rules=${cleaned.size}; chapter=$targetIndex"
+            )
             ioSafe {
                 try {
                     while (chapterMutex.withLock { loading.contains(targetIndex) }) {
@@ -1424,6 +1428,10 @@ class ReadActivityViewModel : ViewModel() {
 
     fun init(book: AbstractBook, context: Context) {
         this.book = book
+        val sourceName = (book as? QuickBook)?.data?.meta?.apiName ?: "Local EPUB"
+        CrashLog.updateContext(
+            "Reader active; source=$sourceName; textReplacementRules=${getTextReplacements().size}"
+        )
         _title.postValue(book.title())
 
         updateChapters()
