@@ -762,6 +762,9 @@ object ExtensionJsRuntime {
                         selection.parent = function(){return wrap(call('parent',id));};
                         selection.next = function(){return wrap(call('next',id));};
                         selection.prev = function(){return wrap(call('prev',id));};
+                        selection.nextUntil = function(selector){
+                          return wrap(call('nextUntil',id,String(selector || '*')));
+                        };
                         selection.toArray = function(){return selection.get();};
                         selection.addBack = function(){
                           return selection._qnPrevId == null ? selection :
@@ -1376,6 +1379,25 @@ object ExtensionJsRuntime {
                 "parent" -> storeNodes(nodes.mapNotNull { it.parentNode() }.distinct())
                 "next" -> storeNodes(nodes.filterIsInstance<Element>().mapNotNull { it.nextElementSibling() })
                 "prev" -> storeNodes(nodes.filterIsInstance<Element>().mapNotNull { it.previousElementSibling() })
+                "nextUntil" -> {
+                    val selector = normalizeSelector(value.orEmpty())
+                    require(selector.isNotBlank() && selector.length <= maxSelectorChars) {
+                        "CSS selector is empty or too long."
+                    }
+                    val collected = mutableListOf<Element>()
+                    nodes.filterIsInstance<Element>().forEach { start ->
+                        var sibling = start.nextElementSibling()
+                        var visited = 0
+                        while (sibling != null && !sibling.`is`(selector)) {
+                            collected += sibling
+                            sibling = sibling.nextElementSibling()
+                            require(++visited <= maxResults) {
+                                "Cheerio nextUntil exceeded the sibling limit."
+                            }
+                        }
+                    }
+                    storeNodes(collected.distinct())
+                }
                 "nextNode" -> storeNodes(nodes.firstOrNull()?.let { sibling(it, 1) }?.let(::listOf).orEmpty())
                 "merge" -> {
                     val ids = JSONArray(value.orEmpty())
