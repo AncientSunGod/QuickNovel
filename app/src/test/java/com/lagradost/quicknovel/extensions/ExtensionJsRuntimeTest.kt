@@ -86,6 +86,27 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsLnReaderAesGcmAndUtf8UtilityModules() {
+        val (extension, file) = extension(
+            "var aes = require('@libs/aes'); " +
+                "var utils = require('@libs/utils'); " +
+                "module.exports = { searchNovels: function() { " +
+                "var key = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]; " +
+                "var nonce = [0,0,0,0,0,0,0,0,0,0,0,0]; " +
+                "var cipher = aes.gcm(key, nonce); " +
+                "var encrypted = cipher.encrypt(utils.utf8ToBytes('Fenrir Realm')); " +
+                "return [{name:utils.bytesToUtf8(cipher.decrypt(encrypted)),path:'/aes-test'}]; " +
+                "} };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertTrue(result.json.contains("Fenrir Realm"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun supportsAsyncStyleBundleAndKnownLnReaderModules() {
         val (extension, file) = extension(
             "var cover = require('@libs/defaultCover'); " +
