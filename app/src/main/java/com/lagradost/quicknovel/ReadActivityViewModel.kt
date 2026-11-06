@@ -205,11 +205,16 @@ abstract class AbstractBook {
 
     private var poster: Bitmap? = null
 
-    init {
-        ioSafe {
+    // Never call an overridable method from AbstractBook's constructor. At that point
+    // subclass fields (QuickBook.data / RegularBook.data) have not been initialized.
+    // The owning ViewModel invokes this after the concrete book is fully constructed.
+    fun loadPoster() = ioSafe {
+        try {
             poster = posterBytes()?.let { byteArray ->
                 BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
             }
+        } catch (error: Throwable) {
+            logError(error)
         }
     }
 
@@ -492,6 +497,9 @@ data class ChapterUpdate(
 class ReadActivityViewModel : ViewModel() {
     lateinit var book: AbstractBook
     private lateinit var markwon: Markwon
+
+    /** True only after the concrete book and its Markwon renderer are both ready. */
+    fun isReaderReady(): Boolean = this::book.isInitialized && this::markwon.isInitialized
     private var isInApp: Boolean = true
     private var leftAppAt: ScrollIndex? = null
     val translationManager = TranslationManager()
@@ -1391,6 +1399,10 @@ class ReadActivityViewModel : ViewModel() {
             })
             .usePlugin(SoftBreakAddsNewLinePlugin.create())
             .build()
+
+        // Start artwork loading only after QuickBook / RegularBook construction and
+        // renderer initialization are complete.
+        book.loadPoster()
         //reducer = MarkwonReducer.directChildren()
     }
 
