@@ -33,6 +33,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.animation.doOnEnd
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -871,6 +872,20 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
         readActivity = this
         binding = ReadMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // The reader draws edge-to-edge. Keep the book progress strip above the
+        // system navigation area instead of letting the gesture/navigation bar cover it.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.readOverflowProgress) { view, insets ->
+            val navigationInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val params = view.layoutParams as? FrameLayout.LayoutParams
+            if (params != null && params.bottomMargin != navigationInset) {
+                params.bottomMargin = navigationInset
+                view.layoutParams = params
+            }
+            insets
+        }
+        ViewCompat.requestApplyInsets(binding.root)
+
         binding.readOverflowProgress.apply {
             isIndeterminate = false
             isVisible = false
@@ -908,6 +923,22 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
         ).apply {
             setHasStableIds(true)
         }
+
+        // List diffs can finish after the loading observer's first visibility update.
+        // Recalculate once the RecyclerView has applied the new chapter rows.
+        textAdapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            private fun refreshProgressAfterLayout() {
+                binding.realText.post { updateChapterReadingProgress() }
+            }
+
+            override fun onChanged() = refreshProgressAfterLayout()
+            override fun onItemRangeChanged(positionStart: Int, itemCount: Int) =
+                refreshProgressAfterLayout()
+            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) =
+                refreshProgressAfterLayout()
+            override fun onItemRangeRemoved(positionStart: Int, itemCount: Int) =
+                refreshProgressAfterLayout()
+        })
 
         binding.readToolbar.apply {
             setNavigationIcon(R.drawable.ic_baseline_arrow_back_24)
