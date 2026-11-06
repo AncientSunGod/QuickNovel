@@ -1307,7 +1307,7 @@ object ExtensionJsRuntime {
                     storeNodes(nodes.filterIsInstance<Element>().filter { it.`is`(selector) })
                 }
                 "has" -> {
-                    val selector = value.orEmpty()
+                    val selector = normalizeSelector(value.orEmpty())
                     require(selector.isNotBlank() && selector.length <= maxSelectorChars) {
                         "CSS selector is empty or too long."
                     }
