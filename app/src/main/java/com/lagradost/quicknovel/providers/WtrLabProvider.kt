@@ -254,7 +254,7 @@ class WtrLabProvider : MainAPI() {
         val root = app.post(
             url = "$mainUrl/api/reader/get", data = mapOf(
                 "chapter_id" to chapter.chapter.id.toString(),
-                "chapter_no" to chapter.serieData.slug,
+                "chapter_no" to chapter.chapter.slug?.takeIf { it.isNotBlank() }\n                    ?: chapter.serieData.slug,
                 "force_retry" to "false",
                 "language" to "en",
                 "raw_id" to chapter.serieData.rawId.toString(),
