@@ -61,6 +61,7 @@ import com.lagradost.cloudstream4.theme.modeToTheme
 import com.lagradost.cloudstream4.theme.perfToColor
 import com.lagradost.cloudstream4.theme.perfToMode
 import com.lagradost.quicknovel.BuildConfig
+import com.lagradost.quicknovel.APIRepository
 import com.lagradost.quicknovel.CommonActivity.activity
 import com.lagradost.quicknovel.CommonActivity.showToast
 import com.lagradost.quicknovel.ErrorLoadingException
@@ -70,6 +71,7 @@ import com.lagradost.quicknovel.R
 import com.lagradost.quicknovel.mvvm.logError
 import com.lagradost.quicknovel.ui.txt
 import com.lagradost.quicknovel.util.Apis.Companion.apis
+import com.lagradost.quicknovel.util.Apis.Companion.getApiSettings
 import com.lagradost.quicknovel.extensions.ExtensionSettingsManager
 import com.lagradost.quicknovel.extensions.ExtensionSetting
 import com.lagradost.quicknovel.extensions.InstalledExtension
@@ -578,7 +580,12 @@ object SettingScreen : SearchableSettings {
                                                 }
                                                 result.onSuccess {
                                                     installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
-                                                    repositoryStatus = "${entry.name} installed. It is now available as a provider; compatibility depends on the plugin's module imports."
+                                                    // Provider lists are cached by the home/search ViewModels. Refresh the
+                                                    // enabled-provider set and recreate the activity so newly installed
+                                                    // extensions are visible immediately instead of requiring a manual restart.
+                                                    APIRepository.providersActive = context.getApiSettings()
+                                                    repositoryStatus = "${entry.name} installed. Reloading providers…"
+                                                    activity?.recreate()
                                                 }.onFailure { error ->
                                                     repositoryStatus = error.message ?: "Could not install ${entry.name}."
                                                 }
