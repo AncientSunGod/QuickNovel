@@ -675,7 +675,7 @@ object BookDownloader2Helper {
             val outputFile = File(fileName)
             outputFile.parentFile?.mkdirs()
             outputFile.writeText(mapper.writeValueAsString(data))
-            FileProvider.getUriForFile(
+            return FileProvider.getUriForFile(
                 this,
                 "$packageName.provider",
                 outputFile
