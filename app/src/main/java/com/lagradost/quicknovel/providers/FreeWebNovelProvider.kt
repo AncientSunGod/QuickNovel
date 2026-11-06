@@ -214,6 +214,12 @@ open class FreewebnovelProvider : MainAPI() {
         val response = app.get(url)
         val document = response.document
         val name = document.selectFirst("h1.tit")?.text() ?: return null
+        val genreText = document.selectFirst("span.glyphicon.glyphicon-th-list")
+            ?.nextElementSiblings()?.firstOrNull()?.text().orEmpty()
+        val restrictedGenres = setOf("adult", "ecchi", "smut", "mature")
+        if (genreText.split(",").any { it.trim().lowercase() in restrictedGenres }) {
+            return null
+        }
         val chaptersDataphp = getChapterList(document, response.url)
         return newStreamResponse(url = response.url, name = name, data = chaptersDataphp) {
             author = document.selectFirst("a[href^=/author/]")?.text()
