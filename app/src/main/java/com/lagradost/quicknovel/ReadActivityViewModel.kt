@@ -1256,90 +1256,102 @@ class ReadActivityViewModel : ViewModel() {
         val loadedBook = safeApiCall {
             if (intent == null) throw ErrorLoadingException("No intent")
 
-            val data = intent.data ?: throw ErrorLoadingException("Empty intent")
-            val isFromEpub = intent.type != "quickstream"
+            val sessionId = intent.getStringExtra(QUICK_STREAM_SESSION_EXTRA)
+            val isQuickStream = intent.type == "quickstream" || !sessionId.isNullOrBlank()
+            val inProcessQuickStream = QuickStreamSessionStore.get(sessionId)
 
-            val epub = if (isFromEpub) {
-                val fd = context.contentResolver.openFileDescriptor(data, "r")
-                    ?: throw ErrorLoadingException("Unable to open file descriptor")
-                val zipFile = AndroidZipFile(fd, "")
-                val book = EpubReader().readEpubLazy(zipFile, "utf-8")
-                RegularBook(book)
-            } else {
-                val input = context.contentResolver.openInputStream(data)
-                    ?: throw ErrorLoadingException("Empty data")
-                QuickBook(DataStore.mapper.readValue(input.reader().readText()))
+            val loaded = when {
+                inProcessQuickStream != null -> {
+                    QuickBook(inProcessQuickStream)
+                }
+
+                isQuickStream -> {
+                    // Legacy / process-recreation fallback: older intents carry only a
+                    // FileProvider URI containing the serialized QuickStream manifest.
+                    val data = intent.data ?: throw ErrorLoadingException(
+                        "QuickStream session expired and no recovery manifest was attached."
+                    )
+                    val input = context.contentResolver.openInputStream(data)
+                        ?: throw ErrorLoadingException("Unable to open QuickStream recovery manifest")
+                    val manifest = input.bufferedReader().use { it.readText() }
+                    val quickStream = DataStore.mapper.readValue<QuickStreamData>(manifest)
+                    QuickBook(quickStream)
+                }
+
+                else -> {
+                    val data = intent.data ?: throw ErrorLoadingException("Empty EPUB intent")
+                    val fd = context.contentResolver.openFileDescriptor(data, "r")
+                        ?: throw ErrorLoadingException("Unable to open file descriptor")
+                    val zipFile = AndroidZipFile(fd, "")
+                    val epub = EpubReader().readEpubLazy(zipFile, "utf-8")
+                    RegularBook(epub)
+                }
             }
 
-            if (epub.size() <= 0) {
+            if (loaded.size() <= 0) {
                 throw ErrorLoadingException("Empty book, failed to parse ${intent.type}")
             }
-            epub
+            loaded
         }
 
         when (loadedBook) {
             is Resource.Success -> {
-                init(loadedBook.value, context)
+                try {
+                    init(loadedBook.value, context)
 
-                initMLFromSettings(mlSettings, false)
+                    initMLFromSettings(mlSettings, false)
 
-                // cant assume we know a chapter max as it can expand
+                    // The same reader is used for downloaded EPUBs, built-in providers,
+                    // and imported extensions. Keep the complete hand-off inside this
+                    // error boundary so malformed manifests or renderer setup failures
+                    // become a visible reader error instead of taking down the Activity.
 
-                val desiredChapterName = getKey<String>(EPUB_CURRENT_POSITION_CHAPTER, book.title())
-                val desiredChapterIndex =
-                    (0 until book.size()).firstOrNull {
-                        loadedBook.value.getChapterTitle(it)
-                            .asStringNull(context) == desiredChapterName
-                    } ?: getKey<Int>(EPUB_CURRENT_POSITION, book.title()) ?: 0
-                val loadedChapterIndex =
-                    maxOf(desiredChapterIndex, 0)
+                    val desiredChapterName = getKey<String>(EPUB_CURRENT_POSITION_CHAPTER, book.title())
+                    val desiredChapterIndex =
+                        (0 until book.size()).firstOrNull {
+                            loadedBook.value.getChapterTitle(it)
+                                .asStringNull(context) == desiredChapterName
+                        } ?: getKey<Int>(EPUB_CURRENT_POSITION, book.title()) ?: 0
+                    val loadedChapterIndex = maxOf(desiredChapterIndex, 0)
 
-                // we the current loaded thing here, but because loadedChapter can be >= book.size (expand) we have to check
-                if (loadedChapterIndex < book.size()) {
-                    _loadingStatus.postValue(
-                        Resource.Loading(
-                            book.getLoadingStatus(
-                                loadedChapterIndex
-                            )
+                    if (loadedChapterIndex < book.size()) {
+                        _loadingStatus.postValue(
+                            Resource.Loading(book.getLoadingStatus(loadedChapterIndex))
                         )
-                    )
-                }
+                    }
 
-                currentIndex = loadedChapterIndex
-                updateIndexAsync(loadedChapterIndex, notify = false, postLoading = true)
+                    currentIndex = loadedChapterIndex
+                    if (book.size() <= 0) {
+                        throw ErrorLoadingException("Reader received a book with no chapters.")
+                    }
 
-                if (book.size() <= 0) {
+                    updateIndexAsync(loadedChapterIndex, notify = false, postLoading = true)
+
+                    // Clamp a saved position if the source's chapter list has changed.
+                    if (loadedChapterIndex >= book.size()) {
+                        currentIndex = book.size() - 1
+                        updateIndexAsync(currentIndex, notify = false)
+                        showToast("Resize $loadedChapterIndex -> $currentIndex", Toast.LENGTH_LONG)
+                    }
+
+                    val char = getKey(
+                        EPUB_CURRENT_POSITION_SCROLL_CHAR, book.title()
+                    ) ?: 0
+                    val innerIndex = innerCharToIndex(currentIndex, char) ?: 0
+                    changeIndex(ScrollIndex(currentIndex, innerIndex, char))
+                    updateReadArea(seekToDesired = true)
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    logError(error)
                     _loadingStatus.postValue(
                         Resource.Failure(
-                            null,
-                            "Invalid chapter data when trying to load chapter $loadedChapterIndex when the book only has ${book.size()} chapters"
+                            error,
+                            error.message ?: "The reader could not initialize this book."
                         )
                     )
                     return@ioSafe
                 }
-
-                // if we are reading a book that sub/resize for some reason, this will clamp it into the correct range
-                if (loadedChapterIndex >= book.size()) {
-                    currentIndex = book.size() - 1
-                    updateIndexAsync(currentIndex, notify = false)
-                    showToast("Resize $loadedChapterIndex -> $currentIndex", Toast.LENGTH_LONG)
-                }
-
-                val char = getKey(
-                    EPUB_CURRENT_POSITION_SCROLL_CHAR, book.title()
-                ) ?: 0
-
-                val innerIndex = innerCharToIndex(currentIndex, char) ?: 0
-
-                // don't update as you want to seek on update
-                changeIndex(ScrollIndex(currentIndex, innerIndex, char))
-
-                // notify once because initial load is 3 chapters I don't care about 10 notifications when the user cant see it
-                updateReadArea(seekToDesired = true)
-
-                /*_loadingStatus.postValue(
-                    Resource.Success(true)
-                )*/
             }
 
             is Resource.Failure -> {
