@@ -17,7 +17,6 @@ import com.lagradost.quicknovel.BaseApplication.Companion.getKey
 import com.lagradost.quicknovel.BaseApplication.Companion.setKey
 import com.lagradost.quicknovel.BookDownloader2
 import com.lagradost.quicknovel.BookDownloader2.openQuickStream
-import com.lagradost.quicknovel.BookDownloader2Helper.createQuickStream
 import com.lagradost.quicknovel.ChapterData
 import com.lagradost.quicknovel.CommonActivity.activity
 import com.lagradost.quicknovel.DownloadActionType
@@ -379,26 +378,25 @@ class ResultViewModel2(
                 }
 
                 try {
-                    // TODO refactor this to use bookdownloader when we deprecate reviewviewmodel1
-                    val uri =
-                        activity?.createQuickStream(
-                            QuickStreamData(
-                                QuickStreamMetaData(
-                                    action.response.author,
-                                    action.response.name,
-                                    action.response.apiName,
-                                ),
-                                action.response.posterUrl,
-                                chapters.map { chapter ->
-                                    ChapterData(
-                                        name = chapter.name,
-                                        url = chapter.url,
-                                        dateOfRelease = chapter.dateOfRelease,
-                                        views = chapter.views
-                                    )
-                                }.toMutableList()
+                    val quickStream = QuickStreamData(
+                        QuickStreamMetaData(
+                            action.response.author,
+                            action.response.name,
+                            action.response.apiName,
+                        ),
+                        action.response.posterUrl,
+                        chapters.map { chapter ->
+                            ChapterData(
+                                name = chapter.name,
+                                url = chapter.url,
+                                dateOfRelease = chapter.dateOfRelease,
+                                views = chapter.views
                             )
-                        )
+                        }.toMutableList()
+                    )
+                    // The session payload is passed in-process; the old FileProvider
+                    // manifest is generated only as a recovery path for process recreation.
+                    val fallbackUri = activity?.let { BookDownloader2Helper.createQuickStream(it, quickStream) }
 
                     ImmutableSearchResponse.addToHistory(response = action.response)
                     setKey(EPUB_CURRENT_POSITION, action.response.name, action.chapter.index)
@@ -411,7 +409,7 @@ class ResultViewModel2(
                         EPUB_CURRENT_POSITION_SCROLL_CHAR, action.response.name, 0,
                     )
 
-                    openQuickStream(uri)
+                    openQuickStream(quickStream, fallbackUri)
                 } catch (t: Throwable) {
                     viewModelScope.launch {
                         postEffect {
