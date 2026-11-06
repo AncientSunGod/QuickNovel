@@ -631,4 +631,92 @@ class ExtensionMainAPITest {
         }
     }
 
+
+    @Test
+    fun runsOfficialFaqWikiBundleAndNormalizesIcontainsSelector() {
+        val source = javaClass.getResourceAsStream("/lnreader/official/faqwiki-v3.js")!!
+            .bufferedReader()
+            .use { it.readText() }
+        val bundle = File.createTempFile("quicknovel-official-faqwiki-", ".js")
+        bundle.writeText(source)
+        val extension = InstalledExtension(
+            id = "FWK.US",
+            name = "Faq Wiki",
+            site = "https://faqwiki.xyz",
+            version = "4.0.0",
+            language = "English",
+            url = "https://raw.githubusercontent.com/LNReader/lnreader-plugins/plugins/v3.0.0/.js/src/plugins/english/faqwikius.js",
+            repositoryUrl = "https://raw.githubusercontent.com/LNReader/lnreader-plugins/plugins/v3.0.0/.dist/plugins.min.json",
+            bundlePath = bundle.absolutePath,
+        )
+        val requests = mutableListOf<String>()
+        val searchHtml = """
+            <html><body>
+              <div class="plt-page-item">
+                <a href="/sample-novel"><img src="/cover.jpg"></a>
+                Sample Novel – Novel – All Chapters
+              </div>
+            </body></html>
+        """.trimIndent()
+        val novelHtml = """
+            <html><body>
+              <h1 class="entry-title">Sample Novel – Novel – All Chapters</h1>
+              <div class="wp-block-image"><img src="/cover.jpg"></div>
+              <div id="lcp_instance_0"></div>
+              <p>Complete</p>
+              <div class="entry-content">
+                <strong>description:</strong><p>A short sample description.</p>
+                <strong>author(s):</strong><p>Sample Author</p>
+                <strong>genre:</strong><p>Fantasy</p>
+              </div>
+              <ul class="lcp_catlist">
+                <li><a href="/chapter-one">Chapter One</a></li>
+                <li><a href="/chapter-two">Chapter Two</a></li>
+              </ul>
+            </body></html>
+        """.trimIndent()
+        val chapterHtml = """
+            <html><body><div class="entry-content"><p>Sample chapter content.</p></div></body></html>
+        """.trimIndent()
+        try {
+            val api = ExtensionMainAPI(
+                extension = extension,
+                testFetchOverride = { url ->
+                    requests += url
+                    when (url) {
+                        "https://faqwiki.xyz" ->
+                            ExtensionHttpClient.TextResponse(url, 200, "text/html", searchHtml)
+                        "https://faqwiki.xyz/sample-novel" ->
+                            ExtensionHttpClient.TextResponse(url, 200, "text/html", novelHtml)
+                        "https://faqwiki.xyz/chapter-one" ->
+                            ExtensionHttpClient.TextResponse(url, 200, "text/html", chapterHtml)
+                        "https://faqwiki.xyz/chapter-two" ->
+                            ExtensionHttpClient.TextResponse(url, 200, "text/html", chapterHtml)
+                        else -> throw AssertionError("Unexpected official Faq Wiki request: $url")
+                    }
+                },
+            )
+
+            val results = kotlinx.coroutines.runBlocking { api.search("Sample") }
+            assertEquals(1, results?.size)
+            val result = results!!.single()
+            val novel = kotlinx.coroutines.runBlocking { api.load(result.url) }
+                as com.lagradost.quicknovel.StreamResponse
+
+            assertEquals("Sample Novel", novel.name)
+            assertEquals("Completed", novel.status)
+            assertEquals(2, novel.data.size)
+            assertEquals("Chapter One", novel.data.first().name)
+            assertEquals("Chapter Two", novel.data.last().name)
+
+            val chapter = kotlinx.coroutines.runBlocking { api.loadHtml(novel.data.first().url) }
+            assertTrue(chapter.orEmpty().contains("Sample chapter content."))
+            assertTrue(requests.contains("https://faqwiki.xyz/sample-novel"))
+            assertTrue(requests.contains("https://faqwiki.xyz/chapter-one"))
+        } finally {
+            bundle.delete()
+        }
+    }
+
+
 }
