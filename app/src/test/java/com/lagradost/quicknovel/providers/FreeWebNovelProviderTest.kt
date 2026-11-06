@@ -190,4 +190,18 @@ class FreeWebNovelProviderTest {
         )
     }
 
+
+    @Test
+    fun parsesNestedAjaxDataEnvelope() {
+        val response = parseFreeWebNovelTocAjaxResponse(
+            """{"data":{"html":"<select><option value=\"/novel/sample/chapter-1\">Chapter 1</option></select>","totalPages":3}}"""
+        )
+
+        assertEquals(3, response.totalPages)
+        assertTrue(response.html.contains("Chapter 1"))
+        assertEquals(
+            listOf("Chapter 1"),
+            parseFreeWebNovelTocLinks(Jsoup.parse(response.html), includeOptions = true).map { it.name },
+        )
+    }
 }
