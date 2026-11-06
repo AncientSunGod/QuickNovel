@@ -21,6 +21,13 @@ internal object CrashLog {
     @Volatile
     private var installed = false
 
+    @Volatile
+    private var runtimeContext = "No active reader context"
+
+    fun updateContext(description: String) {
+        runtimeContext = description.take(500)
+    }
+
     @Synchronized
     fun install(context: Context) {
         if (installed) return
@@ -66,6 +73,7 @@ internal object CrashLog {
             appendLine("Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Thread: ${thread.name}")
+            appendLine("Reader context: $runtimeContext")
             appendLine()
             append(writer.toString())
             appendLine()
