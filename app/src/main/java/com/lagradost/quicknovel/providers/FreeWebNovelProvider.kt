@@ -17,10 +17,12 @@ import com.lagradost.quicknovel.newStreamResponse
 import com.lagradost.quicknovel.providers.LibReadProvider.ChaptersResponse
 import com.lagradost.quicknovel.providers.LibReadProvider.LibReadCommentsResponse
 import com.lagradost.quicknovel.setStatus
+import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 
 open class FreewebnovelProvider : MainAPI() {
+    private companion object { const val MAX_TOC_PAGES = 200 }
     override val name = "FreeWebNovel"
     override val mainUrl = "https://freewebnovel.com"
     override val iconId = R.drawable.icon_freewebnovel
@@ -108,12 +110,49 @@ open class FreewebnovelProvider : MainAPI() {
     //used to getChapterList. It's necesary because LibRead and Freewebnovel requires different things.
     open fun getAcode(url: String): String = url.substringAfterLast("/")
     suspend fun getChapterList(doc: Document, url: String): List<ChapterData> {
-        val baseUrl = url.removeSuffix("/").removeSuffix(".html")
+        val pageUrl = url.substringBefore("?").substringBefore("#")
+        val baseUrl = pageUrl.removeSuffix("/").removeSuffix(".html")
         val acode = getAcode(baseUrl)
+        val chaptersByUrl = linkedMapOf<String, ChapterData>()
 
-        // Prefer the site's chapter-list endpoint when its legacy identifiers are present.
-        // The current site also renders chapter links directly in the novel page, so use
-        // those as a fallback instead of returning a successful-looking empty chapter list.
+        fun parseTocPage(tocDocument: Document) {
+            tocDocument.select(
+                "ul#idData a, #list-chapter ul.ul-list5 a.con, ul#idData.ul-list5 a.con"
+            ).forEach { link ->
+                val href = link.attr("href").takeIf { it.isNotBlank() } ?: return@forEach
+                val chapterUrl = fixUrlNull(href) ?: return@forEach
+                val title = link.attr("title").trim().ifBlank { link.text().trim() }
+                if (title.isNotBlank()) {
+                    chaptersByUrl.putIfAbsent(chapterUrl, newChapterData(title, chapterUrl))
+                }
+            }
+        }
+
+        // Current FreeWebNovel TOCs use ul#idData and may span multiple AJAX pages.
+        // The page selector or the inline totalPage value tells us how many pages exist.
+        parseTocPage(doc)
+        val selectedPageCount = doc.select("#indexselect option").size
+        val scriptedPageCount = doc.select("script").firstNotNullOfOrNull { script ->
+            Regex("""totalPage:\\s*(\\d+)""")
+                .find(script.html())?.groupValues?.getOrNull(1)?.toIntOrNull()
+        } ?: 1
+        val totalPages = (selectedPageCount.takeIf { it > 0 } ?: scriptedPageCount)
+            .coerceIn(1, MAX_TOC_PAGES)
+
+        if (totalPages > 1) {
+            for (page in 2..totalPages) {
+                val ajaxUrl = "$pageUrl?ajax=chapters&page=$page"
+                val pageHtml = runCatching {
+                    val json = JSONObject(app.get(ajaxUrl).text)
+                    if (json.optInt("code") == 200) json.optString("html") else ""
+                }.getOrDefault("")
+                if (pageHtml.isBlank()) continue
+                parseTocPage(Jsoup.parse(pageHtml, ajaxUrl))
+            }
+        }
+        if (chaptersByUrl.isNotEmpty()) return chaptersByUrl.values.toList()
+
+        // Older site variants still expose the chapter list through chapterlist.php.
         val articleImageUrls = listOfNotNull(
             doc.selectFirst("meta[name=image]")?.attr("content"),
             doc.selectFirst("meta[property=og:image]")?.attr("content"),
@@ -123,14 +162,12 @@ open class FreewebnovelProvider : MainAPI() {
         val novelId = doc.selectFirst("a.set-case.add")?.attr("data-articleid")
             ?.takeIf { it.isNotBlank() }
             ?: articleImageUrls.firstNotNullOfOrNull { imageUrl ->
-                Regex("""(\d+)s\.(?:jpe?g|png|webp)""", RegexOption.IGNORE_CASE)
+                Regex("""(\\d+)s\\.(?:jpe?g|png|webp)""", RegexOption.IGNORE_CASE)
                     .find(imageUrl)?.groupValues?.getOrNull(1)
             }
 
-        val apiChapters = if (novelId == null) {
-            emptyList()
-        } else {
-            runCatching {
+        if (novelId != null) {
+            val apiChapters = runCatching {
                 val response = app.post(
                     "$secondUrl/api/chapterlist.php", data = mapOf(
                         "aid" to novelId,
@@ -147,15 +184,15 @@ open class FreewebnovelProvider : MainAPI() {
                     )
                 }.distinctBy { it.url }
             }.getOrDefault(emptyList())
+            if (apiChapters.isNotEmpty()) return apiChapters
         }
 
-        if (apiChapters.isNotEmpty()) return apiChapters
-
-        // FreeWebNovel now exposes chapter anchors on the novel page. Restrict matches
-        // to this novel's own path so latest-chapter widgets and related novels cannot
-        // leak unrelated links into the chapter list.
+        // Last-resort selectors for older page layouts; keep only links belonging to
+        // this novel so latest-chapter widgets and related novels cannot leak in.
         val novelPath = Uri.parse(baseUrl).path?.trimEnd('/').orEmpty()
-        return doc.select("a[href*=/chapter/], a[href*=chapter-], a[href*=chapter_], #chapterlist a, #chapter-list a, .chapter-list a, .list-chapter a, div.m-newest1 ul.ul-list5 a").mapNotNull { link ->
+        return doc.select(
+            "a[href*=/chapter/], a[href*=chapter-], a[href*=chapter_], #chapterlist a, #chapter-list a, .chapter-list a, .list-chapter a, div.m-newest1 ul.ul-list5 a"
+        ).mapNotNull { link ->
             val href = link.attr("href").takeIf { it.isNotBlank() }
                 ?: return@mapNotNull null
             val chapterUrl = fixUrlNull(href) ?: return@mapNotNull null
@@ -167,7 +204,7 @@ open class FreewebnovelProvider : MainAPI() {
             if (chapterName.isBlank()) return@mapNotNull null
             newChapterData(name = chapterName, url = chapterUrl)
         }.distinctBy { it.url }.sortedBy { chapter ->
-            Regex("""chapter[-_/]?(\d+)""", RegexOption.IGNORE_CASE)
+            Regex("""chapter[-_/]?(\\d+)""", RegexOption.IGNORE_CASE)
                 .find(chapter.url)?.groupValues?.getOrNull(1)?.toLongOrNull()
                 ?: Long.MAX_VALUE
         }
