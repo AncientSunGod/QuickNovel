@@ -21,6 +21,26 @@ import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 
+internal data class FreeWebNovelTocAjaxPage(
+    val html: String,
+    val totalPages: Int,
+)
+
+/**
+ * FreeWebNovel's current AJAX chapter list returns JSON with "html" and "totalPage".
+ * Older mirrors sometimes return the HTML fragment directly or wrap it without "code".
+ */
+internal fun parseFreeWebNovelTocAjaxResponse(responseText: String): FreeWebNovelTocAjaxPage {
+    val trimmed = responseText.trim()
+    if (trimmed.isBlank()) return FreeWebNovelTocAjaxPage("", 1)
+
+    val json = runCatching { JSONObject(trimmed) }.getOrNull()
+        ?: return FreeWebNovelTocAjaxPage(trimmed, 1)
+    val html = json.optString("html", "").takeIf { it.isNotBlank() }.orEmpty()
+    val totalPages = json.optInt("totalPage", json.optInt("totalPages", 1)).coerceAtLeast(1)
+    return FreeWebNovelTocAjaxPage(html, totalPages)
+}
+
 open class FreewebnovelProvider : MainAPI() {
     private companion object { const val MAX_TOC_PAGES = 200 }
     override val name = "FreeWebNovel"
@@ -128,27 +148,53 @@ open class FreewebnovelProvider : MainAPI() {
             }
         }
 
-        // Current FreeWebNovel TOCs use ul#idData and may span multiple AJAX pages.
-        // The page selector or the inline totalPage value tells us how many pages exist.
+        // The official LNReader Free Web Novel source confirms this endpoint contract:
+        // GET {novelUrl}?ajax=chapters&page={n}&pageSize=40 -> { html, totalPage }.
+        // In particular, responses do not always include a numeric "code" field. Requiring
+        // code == 200 silently discarded valid HTML and returned a 0-chapter novel.
         parseTocPage(doc)
-        val selectedPageCount = doc.select("#indexselect option").size
+        val pageSize = 40
+        val selectedPageCount = doc.select("#indexselect option")
+            .mapNotNull { it.attr("value").toIntOrNull() }
+            .maxOrNull()
+            ?: doc.select("#indexselect option").size.takeIf { it > 0 }
+            ?: 1
+        val totalChapterCount = doc.selectFirst("#indexListPage")
+            ?.attr("data-total-chapters")
+            ?.toIntOrNull()
+            ?: doc.select("script").firstNotNullOfOrNull { script ->
+                Regex("""totalChapters:\s*(\d+)""")
+                    .find(script.html())?.groupValues?.getOrNull(1)?.toIntOrNull()
+            }
         val scriptedPageCount = doc.select("script").firstNotNullOfOrNull { script ->
             Regex("""totalPage:\s*(\d+)""")
                 .find(script.html())?.groupValues?.getOrNull(1)?.toIntOrNull()
         } ?: 1
-        val totalPages = (selectedPageCount.takeIf { it > 0 } ?: scriptedPageCount)
-            .coerceIn(1, MAX_TOC_PAGES)
+        var totalPages = maxOf(
+            selectedPageCount,
+            scriptedPageCount,
+            totalChapterCount?.let { (it + pageSize - 1) / pageSize } ?: 1
+        ).coerceIn(1, MAX_TOC_PAGES)
 
-        if (totalPages > 1) {
-            for (page in 2..totalPages) {
-                val ajaxUrl = "$pageUrl?ajax=chapters&page=$page"
-                val pageHtml = runCatching {
-                    val json = JSONObject(app.get(ajaxUrl).text)
-                    if (json.optInt("code") == 200) json.optString("html") else ""
-                }.getOrDefault("")
-                if (pageHtml.isBlank()) continue
-                parseTocPage(Jsoup.parse(pageHtml, ajaxUrl))
+        // Some current site responses include only the chapter-list container shell in
+        // the novel HTML. In that case page 1 must also be fetched over AJAX; the old code
+        // only fetched page 2 onward and therefore returned an empty chapter list.
+        var page = if (chaptersByUrl.isEmpty()) 1 else 2
+        while (page <= totalPages) {
+            val ajaxUrl = "$pageUrl?ajax=chapters&page=$page&pageSize=$pageSize"
+            val pageResult = runCatching {
+                parseFreeWebNovelTocAjaxResponse(app.get(ajaxUrl).text)
+            }.getOrNull()
+            if (pageResult == null || pageResult.html.isBlank()) {
+                // Stop at the first empty/unparseable page. Continuing after this point
+                // merely hides a broken endpoint behind a long wait and many requests.
+                if (page == 1 && chaptersByUrl.isEmpty()) break
+                page++
+                continue
             }
+            parseTocPage(Jsoup.parse(pageResult.html, ajaxUrl))
+            totalPages = maxOf(totalPages, pageResult.totalPages).coerceAtMost(MAX_TOC_PAGES)
+            page++
         }
         if (chaptersByUrl.isNotEmpty()) return chaptersByUrl.values.toList()
 
