@@ -654,13 +654,13 @@ class ExtensionMainAPITest {
             <html><body>
               <div class="plt-page-item">
                 <a href="/sample-novel"><img src="/cover.jpg"></a>
-                Sample Novel – Novel – All Chapters
+                Sample Novel Novel – All Chapters
               </div>
             </body></html>
         """.trimIndent()
         val novelHtml = """
             <html><body>
-              <h1 class="entry-title">Sample Novel – Novel – All Chapters</h1>
+              <h1 class="entry-title">Sample Novel Novel – All Chapters</h1>
               <div class="wp-block-image"><img src="/cover.jpg"></div>
               <div id="lcp_instance_0"></div>
               <p>Complete</p>
