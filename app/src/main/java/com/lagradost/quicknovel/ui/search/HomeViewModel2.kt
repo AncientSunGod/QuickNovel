@@ -16,6 +16,7 @@ import com.lagradost.quicknovel.ui.common.SearchResponseAction
 import com.lagradost.quicknovel.ui.mainpage.FilterQuery
 import com.lagradost.quicknovel.ui.search.HomeEffect.NavigateToMainPage
 import com.lagradost.quicknovel.util.Apis
+import com.lagradost.quicknovel.extensions.ExtensionProviderRegistry
 import com.lagradost.quicknovel.util.cmap
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableSet
@@ -73,6 +74,14 @@ class HomeViewModel2 : ViewModel(),
     StateContainer<HomeViewModelState> by DefaultStateContainer(HomeViewModelState()),
     ActionHandler<HomeAction>,
     EffectContainer<HomeEffect> by DefaultEffectContainer() {
+
+    init {
+        viewModelScope.launch {
+            ExtensionProviderRegistry.revision.collect {
+                onAction(HomeAction.RefreshApis)
+            }
+        }
+    }
 
     /*companion object {
         // Todo do this with injection of perf instead?
