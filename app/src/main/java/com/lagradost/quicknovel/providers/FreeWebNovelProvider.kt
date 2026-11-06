@@ -167,21 +167,36 @@ open class FreewebnovelProvider : MainAPI() {
             }
 
         if (novelId != null) {
+            // Match the current LNReader source contract: chapterlist.php is a GET
+            // endpoint with the article ID in the query string. The old POST body
+            // (aid/acode/cid) is rejected by the current site and silently produced
+            // an empty TOC in QuickNovel.
             val apiChapters = runCatching {
-                val response = app.post(
-                    "$secondUrl/api/chapterlist.php", data = mapOf(
-                        "aid" to novelId,
-                        "acode" to acode,
-                        "cid" to "1"
-                    )
-                ).parsed<ChaptersResponse>()
-                Jsoup.parse(response.html).select("option").mapNotNull { option ->
-                    val value = option.attr("value").takeIf { it.isNotBlank() }
-                        ?: return@mapNotNull null
-                    newChapterData(
-                        name = option.text().ifBlank { "Chapter ${value.substringAfterLast("/")}" },
-                        url = "$secondUrl/novel/$acode/${value.substringAfterLast("/")}"
-                    )
+                val endpoint = "$secondUrl/api/chapterlist.php?aid=${Uri.encode(novelId)}"
+                val responseText = app.get(endpoint).text
+                // Some mirrors wrap the returned fragment in { html: "..." } while
+                // the primary source returns the fragment directly.
+                val fragment = runCatching {
+                    JSONObject(responseText).optString("html").takeIf { it.isNotBlank() }
+                }.getOrNull() ?: responseText
+                val chapterDocument = Jsoup.parse(fragment, endpoint)
+                chapterDocument.select("a[href], option[value]").mapNotNull { element ->
+                    val rawPath = when (element.normalName()) {
+                        "a" -> element.attr("href").trim()
+                        "option" -> element.attr("value").trim()
+                        else -> ""
+                    }.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+
+                    val chapterUrl = when {
+                        rawPath.startsWith("https://", ignoreCase = true) ||
+                            rawPath.startsWith("http://", ignoreCase = true) -> rawPath
+                        rawPath.startsWith("/") -> "$secondUrl$rawPath"
+                        rawPath.contains("/") -> "$secondUrl/${rawPath.trimStart('/')}"
+                        else -> "$secondUrl/novel/$acode/$rawPath"
+                    }
+                    val title = element.attr("title").trim().ifBlank { element.text().trim() }
+                        .ifBlank { "Chapter ${rawPath.substringAfterLast("/")}" }
+                    newChapterData(name = title, url = chapterUrl)
                 }.distinctBy { it.url }
             }.getOrDefault(emptyList())
             if (apiChapters.isNotEmpty()) return apiChapters
