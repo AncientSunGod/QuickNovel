@@ -82,6 +82,10 @@ data class InstalledExtensionProviderInfo(
 
 class Apis {
     companion object {
+        /** Injectable only from androidTest to exercise the reader without live websites. */
+        @Volatile
+        internal var testApisOverride: List<MainAPI>? = null
+
         private val builtInApis: List<MainAPI> = arrayOf(
             //AllProvider(),
             AllNovelProvider(),
@@ -168,6 +172,7 @@ class Apis {
          */
         val apis: List<MainAPI>
             get() {
+                testApisOverride?.let { return it }
                 val context = activity?.applicationContext
                     ?: com.lagradost.quicknovel.BaseApplication.context?.applicationContext
                     ?: return builtInApis
