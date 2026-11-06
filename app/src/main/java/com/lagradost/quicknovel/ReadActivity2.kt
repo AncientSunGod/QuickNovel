@@ -1180,6 +1180,11 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
                     binding.readFail.isVisible = false
 
                     binding.readNormalLayout.isVisible = true
+                    // Show the root overlay immediately on a successful chapter load;
+                    // the first progress calculation may return early while the adapter
+                    // or layout manager is still initializing.
+                    binding.readOverflowProgress.isVisible = true
+                    binding.readOverflowProgress.bringToFront()
                     // The reader can become visible without another RecyclerView scroll
                     // event (initial chapter load, restore, or retry). Initialize the
                     // position indicator after layout has measured the first visible item.
