@@ -865,6 +865,7 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
 
     override fun onDestroy() {
         viewModel.stopTTS()
+        QuickStreamSessionStore.release(intent?.getStringExtra(QUICK_STREAM_SESSION_EXTRA))
         this.unregisterReceiver(mBatInfoReceiver)
         super.onDestroy()
     }
@@ -911,7 +912,9 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
 
         registerBattery()
 
-        viewModel.init(intent, this)
+        // Reader loading is started after all views, adapters, layout managers and
+        // observers have been installed. Previously a very fast cached chapter could
+        // finish while onCreate was still assembling the RecyclerView.
         topBarHeight = binding.readToolbarHolder.minimumHeight + getStatusBarHeight()
         binding.readToolbarHolder.minimumHeight = topBarHeight
         textAdapter = TextAdapter(
@@ -1892,4 +1895,7 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
             bottomSheetDialog.show()
         }
     }
+        // Start asynchronous book loading only after the complete reader UI is ready.
+        viewModel.init(intent, this)
+
 }
