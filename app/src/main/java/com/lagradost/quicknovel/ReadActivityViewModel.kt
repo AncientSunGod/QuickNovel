@@ -1017,7 +1017,11 @@ class ReadActivityViewModel : ViewModel() {
                 chapterData[index] = data
             }
         } catch (t: Throwable) {
-            // Tasks.await may throw
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            // Keep the original exception: a chapter/provider failure should be diagnosable
+            // instead of silently becoming an unexplained empty reader.
+            context?.let { CrashLog.recordNonFatal(it, "Reader chapter load", t) }
+            logError(t)
             chapterMutex.withLock {
                 chapterData[index] = throwableToResource(t)
             }
