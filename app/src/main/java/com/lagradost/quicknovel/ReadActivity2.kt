@@ -475,8 +475,9 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
             ((chapterIndex + chapterFraction) / chapterCount.toFloat()).coerceIn(0f, 1f)
         }
         binding.readOverflowProgress.progress = (bookProgress * 1000f).roundToInt()
-        binding.readOverflowProgress.isVisible =
-            textAdapter.itemCount > 0 && binding.readNormalLayout.isVisible
+        // The adapter may still be applying the first chapter's rows when this
+        // callback runs. Visibility follows the reader state, not a transient itemCount.
+        binding.readOverflowProgress.isVisible = binding.readNormalLayout.isVisible
         if (binding.readOverflowProgress.isVisible) {
             binding.readOverflowProgress.bringToFront()
         }
