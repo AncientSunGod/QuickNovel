@@ -142,4 +142,19 @@ class FreeWebNovelProviderTest {
         assertEquals("sample-novel", extractFreeWebNovelAcode(document, "sample-novel"))
     }
 
+
+    @Test
+    fun resolvesInitialChapterLinksAgainstLibReadHostWhenRequested() {
+        val document = Jsoup.parse(
+            """<ul id="idData"><li><a href="/novel/sample/chapter-1">Chapter One</a></li></ul>"""
+        )
+
+        val chapters = parseFreeWebNovelTocLinks(
+            document,
+            siteRoot = "https://libread.com",
+        )
+
+        assertEquals("https://libread.com/novel/sample/chapter-1", chapters.single().url)
+    }
+
 }
