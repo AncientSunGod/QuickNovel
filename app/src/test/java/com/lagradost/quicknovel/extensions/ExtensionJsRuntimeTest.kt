@@ -953,4 +953,27 @@ class ExtensionJsRuntimeTest {
             file.delete()
         }
     }
+
+    @Test
+    fun supportsBoundedTimerAndConsoleGlobalsUsedByPublishedBundles() {
+        val (extension, file) = extension(
+            "module.exports = { searchNovels: function(term) { " +
+                "return new Promise(function(resolve) { " +
+                "setTimeout(function() { console.warn('retry complete'); " +
+                "resolve([{name:term,path:'/timer-test'}]); }, 1); " +
+                "}); } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension,
+                "searchNovels",
+                """["timer bundle"]""",
+            ).getOrThrow()
+            assertTrue(result.json.contains("timer bundle"))
+            assertTrue(result.json.contains("/timer-test"))
+        } finally {
+            file.delete()
+        }
+    }
+
 }
