@@ -527,4 +527,67 @@ class ExtensionMainAPITest {
         }
     }
 
+
+    @Test
+    fun runsOfficialNovelFireBundleThroughSearchUsingItsRealExportsAndCheerioSelectors() {
+        val source = javaClass.getResourceAsStream("/lnreader/official/novelfire-v3.js")!!
+            .bufferedReader()
+            .use { it.readText() }
+        val bundle = File.createTempFile("quicknovel-official-novelfire-", ".js")
+        bundle.writeText(source)
+        val extension = InstalledExtension(
+            id = "novelfire",
+            name = "Novel Fire",
+            site = "https://novelfire.net/",
+            version = "1.4.5",
+            language = "English",
+            url = "https://raw.githubusercontent.com/LNReader/lnreader-plugins/plugins/v3.0.0/.js/src/plugins/english/NovelFire[novelfire].js",
+            repositoryUrl = "https://raw.githubusercontent.com/LNReader/lnreader-plugins/plugins/v3.0.0/.dist/plugins.min.json",
+            bundlePath = bundle.absolutePath,
+        )
+        val requestedUrls = mutableListOf<String>()
+        val searchHtml = """
+            <!doctype html>
+            <html><body>
+              <div class="novel-list chapters">
+                <div class="novel-item">
+                  <a href="/series/sample-novel" title="Sample Novel">
+                    <h4>Sample Novel</h4>
+                  </a>
+                  <div class="novel-cover"><img src="/covers/sample.jpg"></div>
+                </div>
+              </div>
+            </body></html>
+        """.trimIndent()
+        try {
+            val api = ExtensionMainAPI(
+                extension = extension,
+                testFetchOverride = { url ->
+                    requestedUrls += url
+                    when (url) {
+                        "https://novelfire.net/search?keyword=sample&page=1" ->
+                            ExtensionHttpClient.TextResponse(url, 200, "text/html", searchHtml)
+                        "https://novelfire.net/search?keyword=sample&page=2" ->
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "text/html", "<html><body><div class=\"novel-list chapters\"></div></body></html>"
+                            )
+                        else -> throw AssertionError("Unexpected official Novel Fire request: $url")
+                    }
+                },
+            )
+
+            val results = kotlinx.coroutines.runBlocking { api.search("sample") }
+            assertEquals(1, results?.size)
+            val result = results!!.single()
+            assertEquals("Sample Novel", result.name)
+            assertEquals("Novel Fire", result.apiName)
+            assertEquals("https://novelfire.net/covers/sample.jpg", result.posterUrl)
+            assertTrue(result.url.startsWith("https://novelfire.net/series/sample-novel#qn_ext_path="))
+            assertTrue(requestedUrls.contains("https://novelfire.net/search?keyword=sample&page=1"))
+            assertTrue(requestedUrls.contains("https://novelfire.net/search?keyword=sample&page=2"))
+        } finally {
+            bundle.delete()
+        }
+    }
+
 }
