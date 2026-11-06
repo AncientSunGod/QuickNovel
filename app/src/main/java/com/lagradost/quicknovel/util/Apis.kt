@@ -74,6 +74,12 @@ import com.lagradost.quicknovel.providers.WuxiaClickProvider
 import com.lagradost.quicknovel.providers.WuxiaWorldProvider
 import com.lagradost.quicknovel.util.Coroutines.ioSafe
 
+data class InstalledExtensionProviderInfo(
+    val id: String,
+    val name: String,
+    val lang: String,
+)
+
 class Apis {
     companion object {
         private val builtInApis: List<MainAPI> = arrayOf(
@@ -183,6 +189,34 @@ class Apis {
                     extension = extension,
                     context = context.applicationContext,
                     providerName = providerNames[extension.id] ?: extension.name,
+                )
+            }
+        }
+
+        /**
+         * Returns stable display names and normalized languages for installed extensions.
+         * Settings use this to enable imported providers in both legacy and DataStore filters.
+         */
+        fun getInstalledExtensionProviderInfo(
+            context: Context,
+        ): List<InstalledExtensionProviderInfo> {
+            val extensions = runCatching {
+                ExtensionRepositoryManager.getInstalledExtensions(context.applicationContext)
+            }.getOrDefault(emptyList())
+            val providerNames = com.lagradost.quicknovel.extensions.ExtensionProviderNames.forExtensions(
+                extensions,
+                builtInApis.map { it.name }.toSet(),
+            )
+            return extensions.map { extension ->
+                val api = ExtensionMainAPI(
+                    extension = extension,
+                    context = context.applicationContext,
+                    providerName = providerNames[extension.id] ?: extension.name,
+                )
+                InstalledExtensionProviderInfo(
+                    id = extension.id,
+                    name = api.name,
+                    lang = api.lang,
                 )
             }
         }
