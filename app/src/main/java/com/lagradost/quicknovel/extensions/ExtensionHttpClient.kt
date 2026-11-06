@@ -194,7 +194,13 @@ object ExtensionHttpClient {
                 // Persist it before handling either branch so the next navigation/retry sees
                 // the complete session, not only cookies from successful 2xx responses.
                 storeResponseCookies(connection, currentUrl)
-                if (status == 403 && !webViewRecoveryAttempted && allowedHosts != null) {
+                // Cloudflare may surface a browser-verification failure as 520
+                // rather than 403. Give the same host-scoped WebView session recovery
+                // one bounded attempt; if the origin itself is unavailable, the 520
+                // response is returned unchanged after this attempt.
+                if ((status == 403 || status == 520) &&
+                    !webViewRecoveryAttempted && allowedHosts != null
+                ) {
                     webViewRecoveryAttempted = true
                     connection.disconnect()
                     val targetHost = URL(currentUrl).host
