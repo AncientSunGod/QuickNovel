@@ -9,6 +9,8 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URL
 import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Repository metadata and package management for LNReader-compatible extension manifests.
@@ -16,6 +18,19 @@ import java.util.Locale
  * Execution is handled separately by ExtensionJsRuntime and ExtensionMainAPI; only a
  * subset of LNReader module imports is currently supported.
  */
+/**
+ * Emits a lightweight invalidation whenever installed extension files change.
+ * ViewModels can rebuild their provider snapshots without restarting the app.
+ */
+object ExtensionProviderRegistry {
+    private val _revision = MutableStateFlow(0)
+    val revision = _revision.asStateFlow()
+
+    fun notifyChanged() {
+        _revision.value = _revision.value + 1
+    }
+}
+
 data class ExtensionListing(
     val id: String,
     val name: String,
@@ -510,7 +525,7 @@ object ExtensionRepositoryManager {
             hasUpdate = listing.hasUpdate,
             customJsPath = customJsFile.takeIf { customJsBytes != null && it.isFile }?.absolutePath,
             customCssPath = customCssFile.takeIf { customCssBytes != null && it.isFile }?.absolutePath,
-        )
+        ).also { ExtensionProviderRegistry.notifyChanged() }
     }
 
     fun getInstalledExtensions(context: Context): List<InstalledExtension> {
@@ -547,7 +562,10 @@ object ExtensionRepositoryManager {
         if (!isValidExtensionId(id)) return false
         val directory = File(File(context.filesDir, EXTENSIONS_DIR), id)
         val removed = !directory.exists() || directory.deleteRecursively()
-        if (removed) ExtensionJsRuntime.clearExtensionData(context, id)
+        if (removed) {
+            ExtensionJsRuntime.clearExtensionData(context, id)
+            ExtensionProviderRegistry.notifyChanged()
+        }
         return removed
     }
 }
