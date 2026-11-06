@@ -70,4 +70,27 @@ class FreeWebNovelProviderTest {
                 .isEmpty()
         )
     }
+
+    @Test
+    fun extractsArticleIdFromCurrentIndexListPageMetadata() {
+        val document = Jsoup.parse(
+            """
+            <div id="indexListPage" data-novel-id="2572" data-total-chapters="1682"></div>
+            """.trimIndent(),
+            "https://freewebnovel.com/novel/sample",
+        )
+
+        assertEquals("2572", extractFreeWebNovelArticleId(document))
+    }
+
+    @Test
+    fun extractsArticleIdFromLegacySourceIdScript() {
+        val document = Jsoup.parse(
+            """<script>var sourceid = "31415";</script>""",
+            "https://freewebnovel.com/novel/sample",
+        )
+
+        assertEquals("31415", extractFreeWebNovelArticleId(document))
+    }
+
 }
