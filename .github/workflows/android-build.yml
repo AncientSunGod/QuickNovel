@@ -11,7 +11,6 @@ permissions:
   contents: read
 
 concurrency:
-  # Keep master and pull-request builds from blocking one another.
   group: quicknovel-android-build-${{ github.ref }}
   cancel-in-progress: true
 
@@ -31,8 +30,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
       - name: Run unit tests and build debug APK
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
-      # Publish the built APK immediately. The emulator test must not prevent
-      # retrieval of a compiled build if emulator startup or instrumentation hangs.
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -41,9 +38,16 @@ jobs:
           if-no-files-found: error
       - name: Run QuickStream reader smoke test on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
-        timeout-minutes: 20
+        timeout-minutes: 15
         with:
-          api-level: 35
+          api-level: 34
           arch: x86_64
           profile: pixel_2
-          script: ./gradlew --no-daemon --stacktrace :app:connectedDebugAndroidTest
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: |
+            timeout 180s sh -c 'until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = "1" ]; do sleep 2; done'
+            adb shell settings put global animator_duration_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global window_animation_scale 0
+            timeout 8m ./gradlew --no-daemon --stacktrace :app:connectedDebugAndroidTest
