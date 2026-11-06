@@ -159,7 +159,7 @@ open class FreewebnovelProvider : MainAPI() {
         // to this novel's own path so latest-chapter widgets and related novels cannot
         // leak unrelated links into the chapter list.
         val novelPath = Uri.parse(baseUrl).path?.trimEnd('/').orEmpty()
-        return doc.select("a[href*=/chapter/]").mapNotNull { link ->
+        return doc.select("a[href*=/chapter/], a[href*=chapter-], a[href*=chapter_], #chapterlist a, #chapter-list a, .chapter-list a, .list-chapter a, div.m-newest1 ul.ul-list5 a").mapNotNull { link ->
             val href = link.attr("href").takeIf { it.isNotBlank() }
                 ?: return@mapNotNull null
             val chapterUrl = fixUrlNull(href) ?: return@mapNotNull null
