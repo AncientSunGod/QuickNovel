@@ -1249,9 +1249,32 @@ class ReadActivityViewModel : ViewModel() {
         }
     }
 
-    fun init(intent: Intent?, context: ReadActivity2) = ioSafe {
-        _loadingStatus.postValue(Resource.Loading())
-        initTTSSession(context)
+    private var readerInitializationKey: String? = null
+    private var readerInitializationJob: Job? = null
+
+    /**
+     * Reader initialization belongs to this ViewModel, not a detached global IO scope.
+     * A configuration change reuses the ViewModel and must not start a second load of
+     * the same QuickStream while the previous one is still building the chapter adapter.
+     */
+    fun init(intent: Intent?, context: ReadActivity2) {
+        val appContext = context.applicationContext
+        val sessionId = intent?.getStringExtra(QUICK_STREAM_SESSION_EXTRA)
+        val initializationKey = sessionId?.let { "session:$it" }
+            ?: intent?.data?.toString()
+            ?: "intent:${intent?.type ?: "empty"}"
+
+        synchronized(this) {
+            if (
+                readerInitializationKey == initializationKey &&
+                (readerInitializationJob?.isActive == true || isReaderReady())
+            ) {
+                return
+            }
+            readerInitializationKey = initializationKey
+            readerInitializationJob = viewModelScope.launch(Dispatchers.IO) {
+                _loadingStatus.postValue(Resource.Loading())
+                initTTSSession(appContext)
 
         val loadedBook = safeApiCall {
             if (intent == null) throw ErrorLoadingException("No intent")
@@ -1297,7 +1320,7 @@ class ReadActivityViewModel : ViewModel() {
         when (loadedBook) {
             is Resource.Success -> {
                 try {
-                    init(loadedBook.value, context)
+                    init(loadedBook.value, appContext)
 
                     initMLFromSettings(mlSettings, false)
 
@@ -1364,6 +1387,8 @@ class ReadActivityViewModel : ViewModel() {
             }
 
             else -> throw NotImplementedError()
+                }
+            }
         }
     }
 
