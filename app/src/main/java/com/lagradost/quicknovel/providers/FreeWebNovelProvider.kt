@@ -41,17 +41,35 @@ internal fun parseFreeWebNovelTocAjaxResponse(responseText: String): FreeWebNove
     return FreeWebNovelTocAjaxPage(html, totalPages)
 }
 
-/** Parse the chapter-list markup used by both the initial page and AJAX fragments. */
-internal fun parseFreeWebNovelTocLinks(document: Document): List<ChapterData> =
-    document.select(
-        "ul#idData a[href], #list-chapter ul.ul-list5 a.con[href], ul#idData.ul-list5 a.con[href]"
-    ).mapNotNull { link ->
-        val href = link.absUrl("href").takeIf { it.isNotBlank() }
-            ?: return@mapNotNull null
-        val title = link.attr("title").trim().ifBlank { link.text().trim() }
+/** Parse chapter links from the novel page or the chapter-archive fragment. */
+internal fun parseFreeWebNovelTocLinks(
+    document: Document,
+    siteRoot: String = "https://freewebnovel.com",
+    includeOptions: Boolean = false,
+): List<ChapterData> {
+    val selector = if (includeOptions) {
+        "a[href], option[value]"
+    } else {
+        "ul#idData a[href], #list-chapter ul.ul-list5 a.con[href]"
+    }
+    return document.select(selector).mapNotNull { element ->
+        val rawPath = when (element.normalName()) {
+            "a" -> element.attr("href").trim()
+            "option" -> element.attr("value").trim()
+            else -> ""
+        }.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+
+        // LNReader's Free Web Novel bundle resolves opaque paths from the source root.
+        val chapterUrl = when {
+            rawPath.startsWith("https://", ignoreCase = true) ||
+                rawPath.startsWith("http://", ignoreCase = true) -> rawPath
+            else -> "${siteRoot.trimEnd('/')}/${rawPath.trimStart('/')}"
+        }
+        val title = element.attr("title").trim().ifBlank { element.text().trim() }
         if (title.isBlank()) return@mapNotNull null
-        ChapterData(name = title, url = href, dateOfRelease = null)
+        ChapterData(name = title, url = chapterUrl, dateOfRelease = null)
     }.distinctBy { it.url }
+}
 
 /** Resolve the article identifier used by the current chapterlist.php endpoint. */
 internal fun extractFreeWebNovelArticleId(document: Document): String? {
@@ -172,57 +190,21 @@ open class FreewebnovelProvider : MainAPI() {
             }
         }
 
-        // The official LNReader Free Web Novel source confirms this endpoint contract:
-        // GET {novelUrl}?ajax=chapters&page={n}&pageSize=40 -> { html, totalPage }.
-        // In particular, responses do not always include a numeric "code" field. Requiring
-        // code == 200 silently discarded valid HTML and returned a 0-chapter novel.
+        // The official LNReader Free Web Novel source reads the article ID and
+        // total chapter count from the detail page. When a chapter count is present,
+        // it POSTs aid/acode/cid to api/chapterlist.php. The previous guessed
+        // ?ajax=chapters&page= URL was not this source's endpoint contract.
         parseTocPage(doc)
-        val pageSize = 40
-        val selectedPageCount = doc.select("#indexselect option")
-            .mapNotNull { it.attr("value").toIntOrNull() }
-            .maxOrNull()
-            ?: doc.select("#indexselect option").size.takeIf { it > 0 }
-            ?: 1
-        val totalChapterCount = doc.selectFirst("#indexListPage")
+
+        val totalChapters = doc.selectFirst("#indexListPage")
             ?.attr("data-total-chapters")
             ?.toIntOrNull()
             ?: doc.select("script").firstNotNullOfOrNull { script ->
-                Regex("""totalChapters:\s*(\d+)""")
-                    .find(script.html())?.groupValues?.getOrNull(1)?.toIntOrNull()
+                Regex("""totalChapters:\\s*(\\d+)""")
+                    .find(script.data().ifBlank { script.html() })
+                    ?.groupValues?.getOrNull(1)?.toIntOrNull()
             }
-        val scriptedPageCount = doc.select("script").firstNotNullOfOrNull { script ->
-            Regex("""totalPage:\s*(\d+)""")
-                .find(script.html())?.groupValues?.getOrNull(1)?.toIntOrNull()
-        } ?: 1
-        var totalPages = maxOf(
-            selectedPageCount,
-            scriptedPageCount,
-            totalChapterCount?.let { (it + pageSize - 1) / pageSize } ?: 1
-        ).coerceIn(1, MAX_TOC_PAGES)
 
-        // Some current site responses include only the chapter-list container shell in
-        // the novel HTML. In that case page 1 must also be fetched over AJAX; the old code
-        // only fetched page 2 onward and therefore returned an empty chapter list.
-        var page = if (chaptersByUrl.isEmpty()) 1 else 2
-        while (page <= totalPages) {
-            val ajaxUrl = "$pageUrl?ajax=chapters&page=$page&pageSize=$pageSize"
-            val pageResult = runCatching {
-                parseFreeWebNovelTocAjaxResponse(app.get(ajaxUrl).text)
-            }.getOrNull()
-            if (pageResult == null || pageResult.html.isBlank()) {
-                // Stop at the first empty/unparseable page. Continuing after this point
-                // merely hides a broken endpoint behind a long wait and many requests.
-                if (page == 1 && chaptersByUrl.isEmpty()) break
-                page++
-                continue
-            }
-            parseTocPage(Jsoup.parse(pageResult.html, ajaxUrl))
-            totalPages = maxOf(totalPages, pageResult.totalPages).coerceAtMost(MAX_TOC_PAGES)
-            page++
-        }
-        if (chaptersByUrl.isNotEmpty()) return chaptersByUrl.values.toList()
-
-        // Older site variants still expose the chapter list through chapterlist.php.
         val articleImageUrls = listOfNotNull(
             doc.selectFirst("meta[name=image]")?.attr("content"),
             doc.selectFirst("meta[property=og:image]")?.attr("content"),
@@ -231,45 +213,46 @@ open class FreewebnovelProvider : MainAPI() {
         )
         val novelId = extractFreeWebNovelArticleId(doc)
             ?: articleImageUrls.firstNotNullOfOrNull { imageUrl ->
-                Regex("""(\d+)s\.(?:jpe?g|png|webp)""", RegexOption.IGNORE_CASE)
+                Regex("""(\\d+)s\\.(?:jpe?g|png|webp)""", RegexOption.IGNORE_CASE)
                     .find(imageUrl)?.groupValues?.getOrNull(1)
             }
 
-        if (novelId != null) {
-            // Match the current LNReader source contract: chapterlist.php is a GET
-            // endpoint with the article ID in the query string. The old POST body
-            // (aid/acode/cid) is rejected by the current site and silently produced
-            // an empty TOC in QuickNovel.
+        if (!novelId.isNullOrBlank()) {
             val apiChapters = runCatching {
-                val endpoint = "$secondUrl/api/chapterlist.php?aid=${Uri.encode(novelId)}"
-                val responseText = app.get(endpoint).text
-                // Some mirrors wrap the returned fragment in { html: "..." } while
-                // the primary source returns the fragment directly.
-                val fragment = runCatching {
-                    JSONObject(responseText).optString("html").takeIf { it.isNotBlank() }
-                }.getOrNull() ?: responseText
-                val chapterDocument = Jsoup.parse(fragment, endpoint)
-                chapterDocument.select("a[href], option[value]").mapNotNull { element ->
-                    val rawPath = when (element.normalName()) {
-                        "a" -> element.attr("href").trim()
-                        "option" -> element.attr("value").trim()
-                        else -> ""
-                    }.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val endpoint = "$secondUrl/api/chapterlist.php"
+                val responseText = if (totalChapters != null && totalChapters > 0) {
+                    // Mirrors the official plugin's cursor request. Do not use this
+                    // fallback for titles marked Adult/Ecchi/Smut/Mature: load() rejects
+                    // those genres before the chapter list is requested.
+                    val chapterCursor = kotlin.random.Random.nextInt(totalChapters)
+                    app.post(
+                        endpoint,
+                        headers = mapOf(
+                            "Content-Type" to "application/x-www-form-urlencoded",
+                            "X-Requested-With" to "XMLHttpRequest",
+                        ),
+                        data = mapOf(
+                            "aid" to novelId,
+                            "acode" to acode,
+                            "cid" to chapterCursor.toString(),
+                        ),
+                    ).text
+                } else {
+                    // Older pages without total-chapter metadata use the source's GET form.
+                    app.get("$endpoint?aid=${Uri.encode(novelId)}").text
+                }
 
-                    val chapterUrl = when {
-                        rawPath.startsWith("https://", ignoreCase = true) ||
-                            rawPath.startsWith("http://", ignoreCase = true) -> rawPath
-                        rawPath.startsWith("/") -> "$secondUrl$rawPath"
-                        rawPath.contains("/") -> "$secondUrl/${rawPath.trimStart('/')}"
-                        else -> "$secondUrl/novel/$acode/$rawPath"
-                    }
-                    val title = element.attr("title").trim().ifBlank { element.text().trim() }
-                        .ifBlank { "Chapter ${rawPath.substringAfterLast("/")}" }
-                    newChapterData(name = title, url = chapterUrl)
-                }.distinctBy { it.url }
+                val fragment = parseFreeWebNovelTocAjaxResponse(responseText).html
+                parseFreeWebNovelTocLinks(
+                    Jsoup.parse(fragment, endpoint),
+                    siteRoot = secondUrl,
+                    includeOptions = true,
+                )
             }.getOrDefault(emptyList())
+
             if (apiChapters.isNotEmpty()) return apiChapters
         }
+        if (chaptersByUrl.isNotEmpty()) return chaptersByUrl.values.toList()
 
         // Last-resort selectors for older page layouts; keep only links belonging to
         // this novel so latest-chapter widgets and related novels cannot leak in.
@@ -300,7 +283,7 @@ open class FreewebnovelProvider : MainAPI() {
         val name = document.selectFirst("h1.tit")?.text() ?: return null
         val genreText = document.selectFirst("span.glyphicon.glyphicon-th-list")
             ?.nextElementSiblings()?.firstOrNull()?.text().orEmpty()
-        val restrictedGenres = setOf("adult", "ecchi", "smut", "mature")
+        val restrictedGenres = setOf("adult", "ecchi", "smut", "mature", "explicit", "18+", "nsfw")
         if (genreText.split(",").any { it.trim().lowercase() in restrictedGenres }) {
             return null
         }
