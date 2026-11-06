@@ -112,24 +112,61 @@ open class FreewebnovelProvider : MainAPI() {
     //used to getChapterList. It's necesary because LibRead and Freewebnovel requires different things.
     open fun getAcode(url: String): String = url.substringAfterLast("/")
     suspend fun getChapterList(doc: Document, url: String): List<ChapterData> {
-        val novelId = doc.selectFirst("a.set-case.add")?.attr("data-articleid")
-            ?: doc.selectFirst("meta[name=image]")?.attr("content")?.substringAfterLast("/")?.substringBefore("s.jpg")
-            ?: return emptyList()
         val baseUrl = url.removeSuffix("/").removeSuffix(".html")
         val acode = getAcode(baseUrl)
-        val res = app.post(
-            "$secondUrl/api/chapterlist.php", data = mapOf(
-                "aid" to novelId,
-                "acode" to acode,
-                "cid" to "1"
-            )
-        ).parsed<ChaptersResponse>()
-        val document = Jsoup.parse(res.html)
-        return document.select("option").mapNotNull { i ->
-            newChapterData(
-                name = i.text(),//libread chapters doesn't exist anymore
-                url = "$secondUrl/novel/$acode/${i.attr("value").substringAfterLast("/")}"
-            )
+
+        // Prefer the site's chapter-list endpoint when its legacy identifiers are present.
+        // The current site also renders chapter links directly in the novel page, so use
+        // those as a fallback instead of returning a successful-looking empty chapter list.
+        val novelId = doc.selectFirst("a.set-case.add")?.attr("data-articleid")
+            ?.takeIf { it.isNotBlank() }
+            ?: doc.selectFirst("meta[name=image]")?.attr("content")
+                ?.substringAfterLast("/")?.substringBefore("s.jpg")
+                ?.takeIf { it.isNotBlank() }
+
+        val apiChapters = if (novelId == null) {
+            emptyList()
+        } else {
+            runCatching {
+                val response = app.post(
+                    "$secondUrl/api/chapterlist.php", data = mapOf(
+                        "aid" to novelId,
+                        "acode" to acode,
+                        "cid" to "1"
+                    )
+                ).parsed<ChaptersResponse>()
+                Jsoup.parse(response.html).select("option").mapNotNull { option ->
+                    val value = option.attr("value").takeIf { it.isNotBlank() }
+                        ?: return@mapNotNull null
+                    newChapterData(
+                        name = option.text().ifBlank { "Chapter ${value.substringAfterLast("/")}" },
+                        url = "$secondUrl/novel/$acode/${value.substringAfterLast("/")}"
+                    )
+                }.distinctBy { it.url }
+            }.getOrDefault(emptyList())
+        }
+
+        if (apiChapters.isNotEmpty()) return apiChapters
+
+        // FreeWebNovel now exposes chapter anchors on the novel page. Restrict matches
+        // to this novel's own path so latest-chapter widgets and related novels cannot
+        // leak unrelated links into the chapter list.
+        val novelPath = Uri.parse(baseUrl).path?.trimEnd('/').orEmpty()
+        return doc.select("a[href*=/chapter/]").mapNotNull { link ->
+            val href = link.attr("href").takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            val chapterUrl = fixUrlNull(href) ?: return@mapNotNull null
+            val chapterPath = Uri.parse(chapterUrl).path ?: return@mapNotNull null
+            if (novelPath.isNotBlank() && !chapterPath.startsWith("$novelPath/")) {
+                return@mapNotNull null
+            }
+            val chapterName = link.text().trim().ifBlank { link.attr("title").trim() }
+            if (chapterName.isBlank()) return@mapNotNull null
+            newChapterData(name = chapterName, url = chapterUrl)
+        }.distinctBy { it.url }.sortedBy { chapter ->
+            Regex("""chapter[-_/]?(\\d+)""", RegexOption.IGNORE_CASE)
+                .find(chapter.url)?.groupValues?.getOrNull(1)?.toLongOrNull()
+                ?: Long.MAX_VALUE
         }
     }
 
