@@ -60,6 +60,7 @@ import com.lagradost.cloudstream4.theme.CloudStreamPrimaryColor
 import com.lagradost.cloudstream4.theme.modeToTheme
 import com.lagradost.cloudstream4.theme.perfToColor
 import com.lagradost.cloudstream4.theme.perfToMode
+import com.lagradost.quicknovel.CrashLog
 import com.lagradost.quicknovel.BuildConfig
 import com.lagradost.quicknovel.APIRepository
 import com.lagradost.quicknovel.CommonActivity.activity
@@ -850,6 +851,7 @@ fun LogcatDialog(dismiss: () -> Unit) {
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val crashReport = remember { CrashLog.latestReport(context)?.readText().orEmpty() }
     AlertDialog(
         containerColor = MaterialTheme.colorScheme.background,
         onDismissRequest = dismiss,
@@ -858,6 +860,14 @@ fun LogcatDialog(dismiss: () -> Unit) {
         },
         text = {
             LazyColumn {
+                if (crashReport.isNotBlank()) {
+                    item {
+                        Text(
+                            text = "Saved crash report (copy this when reporting a reader crash):\\n\\n$crashReport",
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                }
                 items(items = list.value) { item ->
                     LogcatItem(item)
                 }
@@ -905,6 +915,14 @@ fun LogcatDialog(dismiss: () -> Unit) {
                     }
                 }
             )
+            if (crashReport.isNotBlank()) {
+                WhiteButton(
+                    text = "Copy crash report",
+                    onClick = {
+                        clipboardHelper(txt("QuickNovel crash report"), crashReport)
+                    }
+                )
+            }
             WhiteButton(
                 text = stringResource(R.string.copylog),
                 onClick = {
