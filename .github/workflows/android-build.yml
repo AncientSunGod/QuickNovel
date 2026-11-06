@@ -31,6 +31,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
       - name: Run unit tests and build debug APK
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      # Publish the built APK immediately. The emulator test must not prevent
+      # retrieval of a compiled build if emulator startup or instrumentation hangs.
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickNovel-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
       - name: Run QuickStream reader smoke test on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         timeout-minutes: 20
@@ -39,9 +47,3 @@ jobs:
           arch: x86_64
           profile: pixel_2
           script: ./gradlew --no-daemon --stacktrace :app:connectedDebugAndroidTest
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: QuickNovel-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
