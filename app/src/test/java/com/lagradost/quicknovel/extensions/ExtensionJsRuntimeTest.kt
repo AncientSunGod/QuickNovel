@@ -70,6 +70,22 @@ class ExtensionJsRuntimeTest {
         }
     }
     @Test
+    fun allowsLargerButBoundedNovelMetadataParsingBudget() {
+        val (extension, file) = extension(
+            "module.exports = { parseNovel: function() { " +
+                "var count = 0; while (count < 500000) { count++; } " +
+                "return { name: 'budget test', chapters: [] }; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "parseNovel", "[]")
+            assertTrue(result.isSuccess)
+            assertTrue(result.getOrThrow().json.contains("budget test"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun supportsAsyncStyleBundleAndKnownLnReaderModules() {
         val (extension, file) = extension(
             "var cover = require('@libs/defaultCover'); " +
