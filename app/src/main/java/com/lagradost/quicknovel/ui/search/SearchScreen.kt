@@ -70,7 +70,6 @@ import com.lagradost.quicknovel.ui.mainpage.MainPageFragment
 import com.lagradost.quicknovel.ui.mainpage.SearchResponseDialog
 import com.lagradost.quicknovel.ui.settings.searchLangList
 import com.lagradost.quicknovel.ui.settings.searchProvidersList
-import com.lagradost.quicknovel.util.Apis.Companion.apis
 import com.lagradost.quicknovel.util.SubtitleHelper
 import com.mihon.common.preference.AndroidPreferenceStore
 import com.mihon.presentation.settings.collectAsState
@@ -116,7 +115,7 @@ object SearchScreen : Screen {
 
 @Composable
 fun SearchScreen(state: HomeViewModelState, action: (HomeAction) -> Unit) {
-    ShowDialog(state.filterLanguages, state.isConfigureShow, action)
+    ShowDialog(state.allApis, state.filterLanguages, state.isConfigureShow, action)
     BackHandler(state.isQueryOpen) {
         action(HomeAction.CloseQuery)
     }
@@ -233,12 +232,15 @@ fun SearchScreen(state: HomeViewModelState, action: (HomeAction) -> Unit) {
 
 @Composable
 fun ShowDialog(
-    filterLanguages: ImmutableSet<String>, isDialogShown: Boolean, action: (HomeAction) -> Unit
+    allApis: List<MainAPI>,
+    filterLanguages: ImmutableSet<String>,
+    isDialogShown: Boolean,
+    action: (HomeAction) -> Unit
 ) {
     if (!isDialogShown) return
 
-    val entries = remember(filterLanguages) {
-        apis.filter { api -> filterLanguages.contains(api.lang) }.associate {
+    val entries = remember(allApis, filterLanguages) {
+        allApis.filter { api -> filterLanguages.contains(api.lang) }.associate {
             it.name to
                     if (filterLanguages.size > 1) {
                         "${SubtitleHelper.getFlagFromIso(it.lang) ?: "🌐"} ${it.name}"
