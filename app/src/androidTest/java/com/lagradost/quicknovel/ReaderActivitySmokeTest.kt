@@ -12,7 +12,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.lagradost.quicknovel.util.Apis
-import com.lagradost.quicknovel.ReadActivity2
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,12 +22,15 @@ class ReaderActivitySmokeTest {
     @Test
     fun quickStreamLaunchRendersAChapterFromItsRegisteredProvider() {
         val appContext = ApplicationProvider.getApplicationContext<Context>()
+        val providerWasCalled = AtomicBoolean(false)
         val provider = object : MainAPI() {
             override val name = "QuickNovelReaderSmoke"
             override val mainUrl = "https://reader-smoke.invalid"
 
-            override suspend fun loadHtml(url: String): String =
-                "<p>Reader smoke chapter body</p>"
+            override suspend fun loadHtml(url: String): String {
+                providerWasCalled.set(true)
+                return "<p>Reader smoke chapter body</p>"
+            }
         }
         val bookTitle = "Reader smoke ${System.currentTimeMillis()}"
         val sessionId = QuickStreamSessionStore.create(
@@ -56,13 +59,17 @@ class ReaderActivitySmokeTest {
 
         try {
             ActivityScenario.launch<ReadActivity2>(intent).use { scenario ->
-                val deadline = SystemClock.uptimeMillis() + 20_000L
+                // Emulator cold-start and first-run setup can take longer than a normal
+                // UI frame. Wait for the actual provider callback and rendered body.
+                val deadline = SystemClock.uptimeMillis() + 60_000L
                 var rendered = false
+                var adapterItems = 0
                 while (!rendered && SystemClock.uptimeMillis() < deadline) {
                     InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                     scenario.onActivity { activity ->
                         val recycler = activity.findViewById<RecyclerView>(R.id.real_text)
                         if (recycler != null) {
+                            adapterItems = recycler.adapter?.itemCount ?: 0
                             for (index in 0 until recycler.childCount) {
                                 if (containsText(recycler.getChildAt(index), "Reader smoke chapter body")) {
                                     rendered = true
@@ -71,10 +78,14 @@ class ReaderActivitySmokeTest {
                             }
                         }
                     }
-                    if (!rendered) SystemClock.sleep(100)
+                    if (!rendered) SystemClock.sleep(150)
                 }
                 assertTrue(
-                    "QuickStream should render provider chapter content in the reader",
+                    "QuickStream provider was never called; reader initialization did not reach chapter download",
+                    providerWasCalled.get(),
+                )
+                assertTrue(
+                    "Provider returned chapter HTML but reader did not render it (adapter items=$adapterItems)",
                     rendered,
                 )
             }
