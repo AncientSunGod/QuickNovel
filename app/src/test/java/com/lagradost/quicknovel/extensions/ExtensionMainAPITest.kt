@@ -665,9 +665,11 @@ class ExtensionMainAPITest {
               <div id="lcp_instance_0"></div>
               <p>Complete</p>
               <div class="entry-content">
-                <strong>description:</strong><p>A short sample description.</p>
-                <strong>author(s):</strong><p>Sample Author</p>
-                <strong>genre:</strong><p>Fantasy</p>
+                <p><strong>description:</strong></p>
+                <p>A short sample description.</p>
+                <p><strong>author(s):</strong></p>
+                <p>Sample Author</p>
+                <p><strong>genre:</strong> Fantasy</p>
               </div>
               <ul class="lcp_catlist">
                 <li><a href="/chapter-one">Chapter One</a></li>
@@ -705,6 +707,9 @@ class ExtensionMainAPITest {
 
             assertEquals("Sample Novel", novel.name)
             assertTrue(novel.status != null)
+            assertEquals("Sample Author", novel.author)
+            assertTrue(novel.synopsis.orEmpty().contains("A short sample description."))
+            assertTrue(novel.tags.orEmpty().contains("Fantasy"))
             assertEquals(2, novel.data.size)
             assertEquals("Chapter One", novel.data.first().name)
             assertEquals("Chapter Two", novel.data.last().name)
