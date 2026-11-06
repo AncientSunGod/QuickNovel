@@ -17,6 +17,9 @@ import org.mozilla.javascript.Scriptable
 import org.mozilla.javascript.ScriptableObject
 import java.io.File
 import java.net.URI
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -40,6 +43,17 @@ object ExtensionJsRuntime {
             "quicknovel_extension_storage_$extensionId",
             AndroidContext.MODE_PRIVATE,
         ).edit().clear().apply()
+    }
+
+    private fun jsByteArray(value: Any?): ByteArray {
+        val array = value as? Scriptable
+            ?: throw IllegalArgumentException("AES input must be a byte array.")
+        val length = (ScriptableObject.getProperty(array, "length") as? Number)?.toInt()
+            ?: throw IllegalArgumentException("AES input byte array has no length.")
+        require(length in 0..(2 * 1024 * 1024)) { "AES input exceeds the 2 MB limit." }
+        return ByteArray(length) { index ->
+            (Context.toNumber(ScriptableObject.getProperty(array, index)).toInt() and 0xff).toByte()
+        }
     }
 
     private const val MAX_SOURCE_BYTES = 8 * 1024 * 1024
@@ -338,6 +352,45 @@ object ExtensionJsRuntime {
             storageFunction.parentScope = scope
             storageFunction.prototype = ScriptableObject.getFunctionPrototype(scope)
             ScriptableObject.putProperty(scope, "__qnStorage", storageFunction)
+            val aesFunction = object : BaseFunction() {
+                override fun call(
+                    context: Context,
+                    callScope: Scriptable,
+                    thisObj: Scriptable,
+                    args: Array<out Any>,
+                ): Any {
+                    val mode = args.getOrNull(0)?.toString().orEmpty()
+                    require(mode == "encrypt" || mode == "decrypt") { "Unsupported AES-GCM operation." }
+                    val key = jsByteArray(args.getOrNull(1))
+                    val nonce = jsByteArray(args.getOrNull(2))
+                    val aadValue = args.getOrNull(3)
+                    val aad = if (aadValue == null || aadValue.toString() == "null") {
+                        null
+                    } else {
+                        jsByteArray(aadValue)
+                    }
+                    val input = jsByteArray(args.getOrNull(4))
+                    require(key.size == 16 || key.size == 24 || key.size == 32) {
+                        "AES-GCM key must be 128, 192, or 256 bits."
+                    }
+                    require(nonce.isNotEmpty() && nonce.size <= 32) { "AES-GCM nonce length is invalid." }
+                    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                    cipher.init(
+                        if (mode == "encrypt") Cipher.ENCRYPT_MODE else Cipher.DECRYPT_MODE,
+                        SecretKeySpec(key, "AES"),
+                        GCMParameterSpec(128, nonce),
+                    )
+                    if (aad != null) cipher.updateAAD(aad)
+                    val output = cipher.doFinal(input)
+                    return context.newArray(
+                        callScope,
+                        output.map { (it.toInt() and 0xff) as Any }.toTypedArray(),
+                    )
+                }
+            }
+            aesFunction.parentScope = scope
+            aesFunction.prototype = ScriptableObject.getFunctionPrototype(scope)
+            ScriptableObject.putProperty(scope, "__qnAesGcm", aesFunction)
             val compatibilityBootstrap = """
                 (function() {
                   // Rhino does not provide the browser/WHATWG URL global. LNReader bundles
@@ -922,6 +975,32 @@ object ExtensionJsRuntime {
                       };
                       urlencode.default = urlencode;
                       return urlencode;
+                    }
+                    if (name === '@libs/utils') {
+                      function utf8ToBytes(value) {
+                        var encoded = unescape(encodeURIComponent(String(value)));
+                        var bytes = [];
+                        for (var i = 0; i < encoded.length; i++) bytes.push(encoded.charCodeAt(i) & 255);
+                        return bytes;
+                      }
+                      function bytesToUtf8(value) {
+                        var encoded = '';
+                        for (var i = 0; i < value.length; i++) {
+                          var byte = Number(value[i]) & 255;
+                          encoded += '%' + (byte < 16 ? '0' : '') + byte.toString(16);
+                        }
+                        return decodeURIComponent(encoded);
+                      }
+                      return {utf8ToBytes:utf8ToBytes, bytesToUtf8:bytesToUtf8};
+                    }
+                    if (name === '@libs/aes') {
+                      function gcm(key, nonce, aad) {
+                        return {
+                          encrypt: function(plaintext) { return __qnAesGcm('encrypt', key, nonce, aad == null ? null : aad, plaintext); },
+                          decrypt: function(ciphertext) { return __qnAesGcm('decrypt', key, nonce, aad == null ? null : aad, ciphertext); }
+                        };
+                      }
+                      return {gcm:gcm};
                     }
                     if (name === '@libs/defaultCover') return {defaultCover: ''};
                     // Published NovelFire-family bundles still import this historical alias.
