@@ -89,6 +89,7 @@ sealed class MainPageAction {
 
     data class Search(val data: String) : MainPageAction()
     object Expand : MainPageAction()
+    object Refresh : MainPageAction()
     data class OpenInBrowser(val url: String) : MainPageAction()
     object Back : MainPageAction()
     object Dismiss : MainPageAction()
@@ -130,6 +131,22 @@ class MainPageViewModel2(
         viewModelScope.launch {
             expand()
         }
+    }
+
+    suspend fun refresh() = withContext(Dispatchers.IO) {
+        // Reset pagination and stale results before requesting page one again.
+        updateState {
+            copy(
+                filter = filter.copy(
+                    query = filter.query.copy(page = 0),
+                    items = persistentListOf(),
+                    loading = false,
+                    error = null,
+                    url = "",
+                )
+            )
+        }
+        expand()
     }
 
     suspend fun expand() = withContext(Dispatchers.IO) {
@@ -256,6 +273,13 @@ class MainPageViewModel2(
                 if (state.value.filter.loading) return
                 viewModelScope.launch {
                     expand()
+                }
+            }
+
+            MainPageAction.Refresh -> {
+                if (state.value.filter.loading) return
+                viewModelScope.launch {
+                    refresh()
                 }
             }
 
