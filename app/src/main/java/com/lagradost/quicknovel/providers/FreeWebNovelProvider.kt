@@ -189,13 +189,15 @@ open class FreewebnovelProvider : MainAPI() {
     suspend fun getChapterList(doc: Document, url: String): List<ChapterData> {
         val pageUrl = url.substringBefore("?").substringBefore("#")
         val baseUrl = pageUrl.removeSuffix("/").removeSuffix(".html")
+        val pageUri = Uri.parse(pageUrl)
+        val pageRoot = "${pageUri.scheme}://${pageUri.authority}"
         val acode = extractFreeWebNovelAcode(doc, getAcode(baseUrl))
         val chaptersByUrl = linkedMapOf<String, ChapterData>()
 
         fun parseTocPage(tocDocument: Document) {
-            // The detail page may belong to LibRead while its archive API is hosted
-            // on FreeWebNovel. Resolve initial-page links against the actual page host.
-            parseFreeWebNovelTocLinks(tocDocument, siteRoot = mainUrl).forEach { chapter ->
+            // The detail page may be redirected between LibRead and FreeWebNovel.
+            // Resolve initial-page links against the final URL returned by the request.
+            parseFreeWebNovelTocLinks(tocDocument, siteRoot = pageRoot).forEach { chapter ->
                 chaptersByUrl.putIfAbsent(chapter.url, chapter)
             }
         }
