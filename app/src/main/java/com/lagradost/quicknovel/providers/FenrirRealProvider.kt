@@ -198,21 +198,50 @@ class FenrirRealProvider : MainAPI() {
     }
 
     override suspend fun loadHtml(url: String): String {
-        val response = app.get(url).parsed<ChapterResponse>()
         // SvelteKit's serialized node layout changes between page builds. Keep the
-        // legacy fast path, then search nested payload values instead of assuming
-        // chapter HTML is always at nodes[1].data[6].
-        val legacyValue = response.nodes
-            .filter { it.type == "data" }
-            .getOrNull(1)?.data?.getOrNull(6)
+        // JSON route as the fast path, but do not fail immediately if the site changes
+        // its payload or returns a browser-verification page.
+        val response = runCatching { app.get(url).parsed<ChapterResponse>() }.getOrNull()
+        val legacyValue = response?.nodes
+            ?.filter { it.type == "data" }
+            ?.getOrNull(1)?.data?.getOrNull(6)
         val chapterText = findChapterHtml(legacyValue)
-            ?: response.nodes.asSequence()
-                .filter { it.type == "data" }
-                .mapNotNull { findChapterHtml(it.data) }
-                .firstOrNull()
-            ?: throw ErrorLoadingException("Fenrir Realm returned no readable chapter content.")
+            ?: response?.nodes?.asSequence()
+                ?.filter { it.type == "data" }
+                ?.mapNotNull { findChapterHtml(it.data) }
+                ?.firstOrNull()
 
-        val chapterHtml = Jsoup.parse(chapterText)
+        val sourceHtml = chapterText ?: run {
+            val chapterPageUrl = url.substringBefore("/__data.json")
+            val script = """
+                (function() {
+                    const selectors = [
+                        ".chapter-content", ".chapter-body", "#chapter-content",
+                        ".reader-content", ".chapter-text", "article", "main"
+                    ];
+                    let attempts = 0;
+                    const timer = setInterval(function() {
+                        for (const selector of selectors) {
+                            const element = document.querySelector(selector);
+                            if (element && element.innerText && element.innerText.trim().length > 100) {
+                                clearInterval(timer);
+                                NativeAndroid.onElementFound(element.innerHTML);
+                                return;
+                            }
+                        }
+                        if (++attempts >= 40) clearInterval(timer);
+                    }, 500);
+                })();
+            """.trimIndent()
+            runCatching {
+                com.lagradost.quicknovel.network.WebViewResolver(
+                    scriptToFinish = script,
+                    useOkhttp = false
+                ).resolveUsingWebView(chapterPageUrl)
+            }.getOrNull()
+        } ?: throw ErrorLoadingException("Fenrir Realm returned no readable chapter content.")
+
+        val chapterHtml = Jsoup.parse(sourceHtml)
         chapterHtml.select("script, style, iframe, svg, noscript").remove()
         chapterHtml.select("[aria-hidden=true]").remove()
         val content = chapterHtml.body().html()
