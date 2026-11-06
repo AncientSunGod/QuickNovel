@@ -254,22 +254,22 @@ class WtrLabProvider : MainAPI() {
             // Chapter pages use /chapter-23 and the page payload may expose either
             // "23" or "chapter-23" in chapter.slug.
             val chapterNo = chapter.chapter.slug
-                ?.let { Regex("""^(?:chapter-)?(\\d+)$""", RegexOption.IGNORE_CASE).matchEntire(it)?.groupValues?.get(1) }
-                ?: Regex("""/chapter-(\\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
+                ?.let { Regex("""^(?:chapter-)?(\d+)$""", RegexOption.IGNORE_CASE).matchEntire(it)?.groupValues?.get(1) }
+                ?: Regex("""/chapter-(\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
                     .find(url)?.groupValues?.get(1)
                 ?: throw ErrorLoadingException("WTR-Lab chapter number was not found")
 
-        val root = app.post(
-            url = "$mainUrl/api/reader/get", data = mapOf(
-                "chapter_id" to chapter.chapter.id.toString(),
-                "chapter_no" to chapterNo,
-                "force_retry" to "false",
-                "language" to "en",
-                "raw_id" to chapter.serieData.rawId.toString(),
-                "retry" to "false",
-                "translate" to "web",
-            )
-        ).parsed<LoadJsonResponse2.Root>()
+            val root = app.post(
+                url = "$mainUrl/api/reader/get", data = mapOf(
+                    "chapter_id" to chapter.chapter.id.toString(),
+                    "chapter_no" to chapterNo,
+                    "force_retry" to "false",
+                    "language" to "en",
+                    "raw_id" to chapter.serieData.rawId.toString(),
+                    "retry" to "false",
+                    "translate" to "web",
+                )
+            ).parsed<LoadJsonResponse2.Root>()
 
             val paragraphs = decryptContent(root.data.data.body)
             val text = StringBuilder()
