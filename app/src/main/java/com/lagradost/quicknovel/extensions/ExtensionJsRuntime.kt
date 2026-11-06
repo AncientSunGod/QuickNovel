@@ -1212,12 +1212,12 @@ object ExtensionJsRuntime {
         // extension. Jsoup supports the equivalent case-insensitive :contains(text),
         // but rejects :icontains as an unknown pseudo-selector.
         private fun normalizeSelector(selector: String): String =
-            Regex(""":icontains\\(\\s*(['\"])(.*?)\\1\\s*\\)""", RegexOption.IGNORE_CASE)
+            Regex(""":icontains\(\s*(['"])(.*?)\1\s*\)""", RegexOption.IGNORE_CASE)
                 .replace(selector) { match ->
                     val text = match.groupValues[2]
-                        .replace("\\\\", "\\\\\\\\")
-                        .replace("\\\"", "\\\\\\\"")
-                    ":contains(\\\"$text\\\")"
+                        .replace("\\", "\\\\")
+                        .replace("\"", "\\\"")
+                    ":contains(\"$text\")"
                 }
 
         fun parseEvents(html: String): String {
