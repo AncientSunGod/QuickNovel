@@ -163,6 +163,7 @@ class NovelArrowProvider : MainAPI() {
             ?: json.optJSONArray("chapters")
             ?: json.optJSONArray("data")
             ?: json.optJSONObject("data")?.optJSONArray("items")
+            ?: json.optJSONObject("data")?.optJSONArray("chapters")
             ?: json.optJSONObject("item")?.optJSONArray("chapters")
 
     private fun JSONObject.firstNonBlank(vararg keys: String): String? =
@@ -200,10 +201,9 @@ class NovelArrowProvider : MainAPI() {
             if (combined.size == beforePage) break
             val pagination = json.optJSONObject("pagination")
                 ?: json.optJSONObject("meta")
-            val totalPages = pagination?.optInt(
-                "total_pages",
-                pagination.optInt("last_page", 0)
-            ) ?: 0
+            val totalPages = pagination?.let {
+                it.optInt("total_pages", it.optInt("last_page", 0))
+            } ?: 0
             if (totalPages > 0 && page >= totalPages) break
             if (totalPages <= 1 && items.length() < 10) break
         }
@@ -282,17 +282,26 @@ class NovelArrowProvider : MainAPI() {
     override suspend fun loadHtml(url: String): String? {
         val chapterPath = url.substringBefore("?").substringAfter("$apiBase/", "")
         val parts = chapterPath.split("/")
-        if (parts.size < 4 || parts[0] != "novels" || parts[2] != "chapters") {
-            throw ErrorLoadingException("Unrecognised NovelArrow chapter URL")
+        if (parts.size >= 4 && parts[0] == "novels" && parts[2] == "chapters") {
+            val novelId = parts[1]
+            val chapterId = parts[3]
+            val json = getJson("$apiBase/novels/$novelId/chapters/$chapterId")
+            val content = json.optJSONObject("item")
+                ?.optJSONObject("chapterInfo")
+                ?.stringOrNull("chapter_content")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+            return content ?: throw ErrorLoadingException("NovelPing chapter content was empty")
         }
-        val novelId = parts[1]
-        val chapterId = parts[3]
-        val json = getJson("$apiBase/novels/$novelId/chapters/$chapterId")
-        val content = json.optJSONObject("item")
-            ?.optJSONObject("chapterInfo")
-            ?.stringOrNull("chapter_content")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-        return content ?: throw ErrorLoadingException("NovelArrow chapter content was empty")
+
+        // Current NovelPing book pages expose chapter content in #chr-content.
+        // Keep this HTML route as a fallback for the newer /book/{slug}/chapter-* URLs.
+        val document = app.get(url).document
+        val content = document.selectFirst("#chr-content")
+            ?: throw ErrorLoadingException("NovelPing chapter content container was not found")
+        content.select("script, style, iframe, noscript, .js-ad-slot").remove()
+        val html = content.html().trim()
+        if (html.isBlank()) throw ErrorLoadingException("NovelPing chapter content was empty")
+        return html
     }
 }
