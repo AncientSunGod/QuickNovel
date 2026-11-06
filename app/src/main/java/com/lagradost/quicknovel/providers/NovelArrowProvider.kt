@@ -214,13 +214,39 @@ class NovelArrowProvider : MainAPI() {
         val slugOrUrl = info.firstNonBlank(
             "novel_slug", "slug", "url_slug", "novel_url", "novel_link", "permalink"
         )
-        val document = slugOrUrl?.let { candidate ->
-            val bookUrl = when {
+        val bookUrl = slugOrUrl?.let { candidate ->
+            when {
                 candidate.startsWith("http") -> candidate
                 candidate.startsWith("/") -> "$mainUrl$candidate"
                 else -> "$mainUrl/book/$candidate"
             }
-            runCatching { app.get(bookUrl).document }.getOrNull()
+        }
+
+        // NovelPing (formerly NovelBin/NovelArrow) serves its table of contents from
+        // /ajax/chapter-archive?novelId=<slug>. The links are inside a <template>;
+        // link text includes comment counts, so the title attribute is authoritative.
+        val novelSlug = bookUrl?.let { Uri.parse(it).pathSegments.getOrNull(1) }
+            ?: slugOrUrl?.takeIf { !it.contains("/") && !it.startsWith("http") }
+        val archiveChapters = novelSlug?.let { slug ->
+            runCatching {
+                val archiveUrl = "$mainUrl/ajax/chapter-archive?novelId=${Uri.encode(slug)}"
+                val archiveDocument = app.get(archiveUrl).document
+                val template = archiveDocument.selectFirst("template")
+                val chapterDocument = template?.let { Jsoup.parse(it.html()) } ?: archiveDocument
+                chapterDocument.select("li a").mapNotNull { link ->
+                    val href = link.attr("href").takeIf { it.isNotBlank() }
+                        ?: return@mapNotNull null
+                    val chapterUrl = if (href.startsWith("http")) href else "$mainUrl${if (href.startsWith("/")) "" else "/"}$href"
+                    val title = link.attr("title").trim().ifBlank { link.text().trim() }
+                    if (title.isBlank()) return@mapNotNull null
+                    newChapterData(title, chapterUrl)
+                }.distinctBy { it.url }
+            }.getOrDefault(emptyList())
+        }.orEmpty()
+        if (archiveChapters.isNotEmpty()) return archiveChapters
+
+        val document = bookUrl?.let { candidate ->
+            runCatching { app.get(candidate).document }.getOrNull()
         }
         val linkedChapters = document?.select(
             "#chapter-list a, #chapterList a, .chapter-list a, .chapter-list-content a, a[href*='chapter-']"
