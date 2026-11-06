@@ -51,9 +51,9 @@ object ExtensionJsRuntime {
     // Keep operation-specific ceilings so catalogue parsing has room without removing
     // the runaway-script guard from cheaper operations.
     private const val MAX_DEFAULT_INSTRUCTIONS = 4_000_000
-    private const val MAX_PARSE_NOVEL_INSTRUCTIONS = 12_000_000
-    private const val MAX_PARSE_CHAPTER_INSTRUCTIONS = 8_000_000
-    private const val MAX_LIST_INSTRUCTIONS = 6_000_000
+    private const val MAX_PARSE_NOVEL_INSTRUCTIONS = 24_000_000
+    private const val MAX_PARSE_CHAPTER_INSTRUCTIONS = 12_000_000
+    private const val MAX_LIST_INSTRUCTIONS = 8_000_000
     private const val OBSERVER_THRESHOLD = 10_000
     private val allowedOperations = setOf(
         "searchNovels",
@@ -414,6 +414,46 @@ object ExtensionJsRuntime {
                     this.URL=QNURL;
                     this.URLSearchParams=QNURLSearchParams;
                   }
+                  // LNReader multisrc plugins use FormData for PHP/AJAX chapter-list
+                  // endpoints. Keep this shim string-only (no file/blob uploads), then
+                  // serialize it to a bounded multipart request in fetchApi below.
+                  function QNFormData() {
+                    this.__qnFormData = true;
+                    this._entries = [];
+                  }
+                  QNFormData.prototype.append = function(name, value) {
+                    this._entries.push([String(name), String(value)]);
+                  };
+                  QNFormData.prototype.set = function(name, value) {
+                    name = String(name);
+                    this.delete(name);
+                    this.append(name, value);
+                  };
+                  QNFormData.prototype.get = function(name) {
+                    name = String(name);
+                    for (var i = 0; i < this._entries.length; i++)
+                      if (this._entries[i][0] === name) return this._entries[i][1];
+                    return null;
+                  };
+                  QNFormData.prototype.getAll = function(name) {
+                    name = String(name);
+                    return this._entries.filter(function(entry) { return entry[0] === name; })
+                      .map(function(entry) { return entry[1]; });
+                  };
+                  QNFormData.prototype.has = function(name) {
+                    return this.get(name) !== null;
+                  };
+                  QNFormData.prototype.delete = function(name) {
+                    name = String(name);
+                    this._entries = this._entries.filter(function(entry) { return entry[0] !== name; });
+                  };
+                  QNFormData.prototype.forEach = function(callback, thisArg) {
+                    this._entries.forEach(function(entry) {
+                      callback.call(thisArg, entry[1], entry[0], this);
+                    }, this);
+                  };
+                  this.FormData = QNFormData;
+
                   function QNPromise(executor) {
                     var self = this;
                     self.state = 0; self.value = void 0; self.handlers = [];
@@ -481,9 +521,28 @@ object ExtensionJsRuntime {
                         }
                         var request = {method:method, headers:headers};
                         if (init && init.body != null) {
-                          if (typeof init.body !== 'string')
-                            throw new Error('Only string request bodies are supported by this extension bridge.');
-                          request.body = init.body;
+                          if (typeof init.body === 'string') {
+                            request.body = init.body;
+                          } else if (init.body && init.body.__qnFormData === true &&
+                              Array.isArray(init.body._entries)) {
+                            var boundary = '----QuickNovelFormBoundary' +
+                              String(Math.floor(Math.random() * 10000000000000000));
+                            var parts = init.body._entries.map(function(entry) {
+                              var fieldName = String(entry[0]).replace(/"/g, '%22');
+                              return '--' + boundary + '\\r\\n' +
+                                'Content-Disposition: form-data; name="' + fieldName + '"\\r\\n\\r\\n' +
+                                String(entry[1]) + '\\r\\n';
+                            });
+                            request.body = parts.join('') + '--' + boundary + '--\\r\\n';
+                            var hasContentType = Object.keys(request.headers).some(function(key) {
+                              return key.toLowerCase() === 'content-type';
+                            });
+                            if (!hasContentType) {
+                              request.headers['Content-Type'] = 'multipart/form-data; boundary=' + boundary;
+                            }
+                          } else {
+                            throw new Error('Only string and simple FormData request bodies are supported by this extension bridge.');
+                          }
                         }
                         return Promise.resolve(JSON.parse(__qnFetch(String(url), JSON.stringify(request), responseEncoding))).then(function(r) {
                           var responseHeaders = r.headers || {};
