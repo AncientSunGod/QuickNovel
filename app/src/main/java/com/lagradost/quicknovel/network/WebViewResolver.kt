@@ -126,11 +126,13 @@ class WebViewResolver(
         url: String,
         referer: String? = null,
         method: String = "GET",
+        completionStabilityDelay: kotlin.time.Duration = 5.seconds,
         requestCallBack: (Request) -> Boolean = { false },
     ): Pair<Request?, List<Request>> {
         val result = resolveUsingWebView(
             request = requestCreator(method, url, referer = referer),
-            requestCallBack = requestCallBack
+            requestCallBack = requestCallBack,
+            completionStabilityDelay = completionStabilityDelay,
         )
         return (result.first as? Request) to result.second
     }
@@ -143,7 +145,8 @@ class WebViewResolver(
     @SuppressLint("SetJavaScriptEnabled")
     suspend fun resolveUsingWebView(
         request: Request,
-        requestCallBack: (Request) -> Boolean = { false }
+        requestCallBack: (Request) -> Boolean = { false },
+        completionStabilityDelay: kotlin.time.Duration = 5.seconds,
     ): Pair<Any?, List<Request>> {
         val url = request.url.toString()
         val headers = request.headers
@@ -229,8 +232,23 @@ class WebViewResolver(
                         println("Loading WebView URL: $webViewUrl")
                         val req = request.toRequest()
 
-                        if (!webViewUrl.contains("/cdn-cgi/") && !webViewUrl.contains("cloudflare")) {
-                            capturedHeaders[runCatching { URI(webViewUrl).host }.getOrNull() ?: ""] = request.requestHeaders
+                        // Only retain browser hints from top-level navigations. Capturing
+                        // every subresource here meant the last CSS/image/script request could
+                        // overwrite the host profile with Sec-Fetch-Dest: style/image, then those
+                        // unrelated values were replayed on every extension API request.
+                        if (request.isForMainFrame &&
+                            !webViewUrl.contains("/cdn-cgi/") &&
+                            !webViewUrl.contains("cloudflare")
+                        ) {
+                            val browserHints = request.requestHeaders.filterKeys { key ->
+                                val normalized = key.lowercase()
+                                normalized == "accept-language" ||
+                                    normalized.startsWith("sec-ch-ua")
+                            }
+                            val host = runCatching { URI(webViewUrl).host }.getOrNull()
+                            if (!host.isNullOrBlank() && browserHints.isNotEmpty()) {
+                                capturedHeaders[host.lowercase()] = browserHints
+                            }
                         }
 
                         // Check if this request matches our target URL
@@ -275,12 +293,19 @@ class WebViewResolver(
                     override fun onPageFinished(view: WebView?, finishUrl: String?) {
                         super.onPageFinished(view, finishUrl)
                         if (finishUrl == null) return
+                        // WebView may report iframe completions through this callback too.
+                        // Never treat a same-host iframe as completion of the top-level
+                        // anti-bot page; wait for the actual page navigation to settle.
+                        val topLevelUrl = view?.url
+                        if (!topLevelUrl.isNullOrBlank() && topLevelUrl != finishUrl) return
 
                         if (requestCallBack(requestCreator("GET", finishUrl))) {
                             if (scriptToFinish == null) {
                                 stabilityJob?.cancel()
                                 stabilityJob = main {
-                                    delay(5.seconds)
+                                    // Give browser-driven anti-bot scripts enough time to finish
+                                    // before returning cookies/session state to the HTTP retry.
+                                    delay(completionStabilityDelay)
                                     deferredResponse.complete(fixedRequest to extraRequestList)
                                 }
                             }

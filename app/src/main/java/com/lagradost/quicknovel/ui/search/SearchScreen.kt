@@ -89,11 +89,13 @@ object SearchScreen : Screen {
         val store = rememberAppSettings()
         val selectionState by store.provider.searchProvidersList.collectAsState()
         LaunchedEffect(selectionState) {
+            viewModel.onAction(HomeAction.RefreshApis)
             viewModel.onAction(HomeAction.ConfigureApisNames(selectionState.toPersistentSet()))
         }
 
         val selectionLangState by store.provider.searchLangList.collectAsState()
         LaunchedEffect(selectionLangState) {
+            viewModel.onAction(HomeAction.RefreshApis)
             viewModel.onAction(HomeAction.ConfigureApisLanguages(selectionLangState.toPersistentSet()))
         }
 

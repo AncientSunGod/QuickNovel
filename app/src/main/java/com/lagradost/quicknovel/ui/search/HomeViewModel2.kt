@@ -54,6 +54,7 @@ data class SearchRow(
 sealed class HomeAction {
     data class Search(val query: String) : HomeAction()
     object ConfigureApis : HomeAction()
+    object RefreshApis : HomeAction()
     object DismissConfigureApis : HomeAction()
     data class Open(val item: MainAPI) : HomeAction()
     data class ConfigureApisNames(val names: ImmutableSet<String>) : HomeAction()
@@ -106,6 +107,22 @@ class HomeViewModel2 : ViewModel(),
 
     override fun onAction(action: HomeAction) {
         when (action) {
+            HomeAction.RefreshApis -> {
+                val allApis = Apis.apis.toImmutableList()
+                val mainPageApis = allApis.filter { api -> api.hasMainPage }.toImmutableList()
+                updateState {
+                    copy(
+                        allApis = allApis,
+                        mainPageApis = mainPageApis,
+                        shownMainPageApis = filterApis(
+                            mainPageApis,
+                            filterNames,
+                            filterLanguages,
+                        ),
+                    )
+                }
+            }
+
             HomeAction.ConfigureApis -> {
                 updateState {
                     copy(isConfigureShow = true)

@@ -3,7 +3,7 @@ name: Android debug APK
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [master, fix/lnreader-extension-compatibility, integration/lnreader-progress-merge]
   pull_request:
     branches: [master]
 
@@ -11,7 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: quicknovel-android-build
+  # Keep master and pull-request builds from blocking one another.
+  group: quicknovel-android-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,7 +30,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
       - name: Run unit tests and build debug APK
-        run:  ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

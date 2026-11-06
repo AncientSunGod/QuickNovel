@@ -3,6 +3,8 @@ package com.lagradost.quicknovel.ui.mainpage
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -20,9 +22,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -110,7 +114,7 @@ fun MainPageScreen(state: MainPageState, action: (MainPageAction) -> Unit) {
         derivedStateOf {
             val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             val totalItems = listState.layoutInfo.totalItemsCount
-            lastVisibleIndex >= totalItems - 5
+            totalItems > 0 && lastVisibleIndex >= totalItems - 5
         }
     }
 
@@ -145,10 +149,7 @@ fun MainPageScreen(state: MainPageState, action: (MainPageAction) -> Unit) {
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
-        SearchList(
-            lazyGridState = listState,
-            isRow = searchIsRowState,
-            items = if (state.openQuery) state.query.items else state.filter.items,
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 // This fixes the double padding from the bottom nav bar
@@ -156,9 +157,103 @@ fun MainPageScreen(state: MainPageState, action: (MainPageAction) -> Unit) {
                     start = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
                     end = innerPadding.calculateEndPadding(LocalLayoutDirection.current),
                     top = innerPadding.calculateTopPadding()
-                ),
-            searchAction = searchAction,
-        )
+                )
+        ) {
+            val visibleItems = if (state.openQuery) state.query.items else state.filter.items
+            val visibleError = if (state.openQuery) state.query.error else state.filter.error
+            val visibleLoading = if (state.openQuery) state.query.loading else state.filter.loading
+
+            SearchList(
+                lazyGridState = listState,
+                isRow = searchIsRowState,
+                items = visibleItems,
+                modifier = Modifier.fillMaxSize(),
+                searchAction = searchAction,
+            )
+
+            // Keep loading feedback visible in the content area as well as the toolbar.
+            // This is especially important on an empty provider page, where the grid
+            // otherwise looks like a blank screen while the first request is running.
+            if (visibleLoading) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth(),
+                )
+                if (visibleItems.isEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            text = "Loading novels…",
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                }
+            }
+
+            // An extension runtime failure previously left an empty black provider page.
+            // Show the actual error (or a clear empty state) and provide a retry action.
+            if (!visibleLoading && visibleItems.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = visibleError?.message ?: "No novels found.",
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                    )
+                    if (visibleError != null) {
+                        Button(
+                            onClick = {
+                                if (state.openQuery) {
+                                    action(MainPageAction.Search(state.query.query))
+                                } else {
+                                    action(MainPageAction.Expand)
+                                }
+                            }
+                        ) {
+                            Text("Retry")
+                        }
+                    }
+                }
+            }
+
+            // Keep a pagination failure visible when earlier pages already loaded.
+            // Otherwise the grid remains on screen and the failure is only a brief toast.
+            if (!state.openQuery && !visibleLoading && visibleItems.isNotEmpty() && visibleError != null) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = visibleError.message ?: "Could not load more novels.",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Button(onClick = { action(MainPageAction.Expand) }) {
+                            Text("Retry")
+                        }
+                    }
+                }
+            }
+        }
 
         LaunchedEffect(shouldLoadMore.value) {
             if (shouldLoadMore.value && state.filter.error == null && !state.filter.loading) {
@@ -306,6 +401,19 @@ fun MainPageSearchBar(
                             painter = painterResource(R.drawable.ic_baseline_public_24),
                             contentDescription = stringResource(R.string.open_in_browser),
                             tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                }
+
+                if (!openQuery) {
+                    IconButton(
+                        onClick = { action(MainPageAction.Refresh) },
+                        enabled = !loading,
+                    ) {
+                        Text(
+                            text = "↻",
+                            fontSize = 24.sp,
+                            color = MaterialTheme.colorScheme.onBackground,
                         )
                     }
                 }
