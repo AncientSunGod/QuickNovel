@@ -8,12 +8,17 @@ import com.lagradost.quicknovel.util.Apis
 import com.lagradost.quicknovel.util.Apis.Companion.getApiProviderLangSettings
 
 class HomeViewModel : ViewModel() {
-    val homeApis: LiveData<List<MainAPI>> by lazy {
-        MutableLiveData(
-            let {
-                val langs = getApiProviderLangSettings()
-                Apis.apis.filter { api -> api.hasMainPage && (langs.contains(api.lang)) }
-            }
-        )
+    private val _homeApis = MutableLiveData<List<MainAPI>>()
+    val homeApis: LiveData<List<MainAPI>> = _homeApis
+
+    init {
+        refreshApis()
+    }
+
+    fun refreshApis() {
+        val langs = getApiProviderLangSettings()
+        _homeApis.value = Apis.apis.filter { api ->
+            api.hasMainPage && langs.contains(api.lang)
+        }
     }
 }
