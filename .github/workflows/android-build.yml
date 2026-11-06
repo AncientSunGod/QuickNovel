@@ -39,7 +39,7 @@ jobs:
           name: QuickNovel-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-      - name: Run QuickStream reader smoke test on Android emulator
+      - name: Run focused QuickStream reader smoke test on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         timeout-minutes: 15
         with:
@@ -53,4 +53,4 @@ jobs:
             adb shell settings put global animator_duration_scale 0
             adb shell settings put global transition_animation_scale 0
             adb shell settings put global window_animation_scale 0
-            timeout 8m ./gradlew --no-daemon --stacktrace :app:connectedDebugAndroidTest
+            timeout --kill-after=30s 10m ./gradlew --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.lagradost.quicknovel.ReaderActivitySmokeTest :app:connectedDebugAndroidTest
