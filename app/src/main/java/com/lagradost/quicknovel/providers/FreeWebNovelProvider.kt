@@ -118,11 +118,18 @@ open class FreewebnovelProvider : MainAPI() {
         // Prefer the site's chapter-list endpoint when its legacy identifiers are present.
         // The current site also renders chapter links directly in the novel page, so use
         // those as a fallback instead of returning a successful-looking empty chapter list.
+        val articleImageUrls = listOfNotNull(
+            doc.selectFirst("meta[name=image]")?.attr("content"),
+            doc.selectFirst("meta[property=og:image]")?.attr("content"),
+            doc.selectFirst("div.pic img")?.attr("src"),
+            doc.selectFirst("picture source")?.attr("srcset")?.substringBefore(",")?.substringBefore(" "),
+        )
         val novelId = doc.selectFirst("a.set-case.add")?.attr("data-articleid")
             ?.takeIf { it.isNotBlank() }
-            ?: doc.selectFirst("meta[name=image]")?.attr("content")
-                ?.substringAfterLast("/")?.substringBefore("s.jpg")
-                ?.takeIf { it.isNotBlank() }
+            ?: articleImageUrls.firstNotNullOfOrNull { imageUrl ->
+                Regex("""(\\d+)s\\.(?:jpe?g|png|webp)""", RegexOption.IGNORE_CASE)
+                    .find(imageUrl)?.groupValues?.getOrNull(1)
+            }
 
         val apiChapters = if (novelId == null) {
             emptyList()
