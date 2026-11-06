@@ -45,7 +45,15 @@ object ExtensionJsRuntime {
     private const val MAX_SOURCE_BYTES = 8 * 1024 * 1024
     private const val MAX_ARGUMENT_BYTES = 256 * 1024
     private const val MAX_RESULT_BYTES = 2 * 1024 * 1024
-    private const val MAX_INSTRUCTIONS = 2_000_000
+    // Parsing novel metadata commonly walks a large chapter catalogue. A single
+    // global 2M budget was too small for otherwise valid LNReader plugins and caused
+    // parseNovel to fail even when the network response and selectors were valid.
+    // Keep operation-specific ceilings so catalogue parsing has room without removing
+    // the runaway-script guard from cheaper operations.
+    private const val MAX_DEFAULT_INSTRUCTIONS = 4_000_000
+    private const val MAX_PARSE_NOVEL_INSTRUCTIONS = 12_000_000
+    private const val MAX_PARSE_CHAPTER_INSTRUCTIONS = 8_000_000
+    private const val MAX_LIST_INSTRUCTIONS = 6_000_000
     private const val OBSERVER_THRESHOLD = 10_000
     private val allowedOperations = setOf(
         "searchNovels",
@@ -91,7 +99,13 @@ object ExtensionJsRuntime {
         val source = sourceFile.readText(Charsets.UTF_8)
         require(source.isNotBlank()) { "Extension bundle is empty." }
 
-        val factory = BudgetedContextFactory(MAX_INSTRUCTIONS)
+        val instructionLimit = when (operation) {
+            "parseNovel" -> MAX_PARSE_NOVEL_INSTRUCTIONS
+            "parseChapter" -> MAX_PARSE_CHAPTER_INSTRUCTIONS
+            "searchNovels", "popularNovels", "parsePage" -> MAX_LIST_INSTRUCTIONS
+            else -> MAX_DEFAULT_INSTRUCTIONS
+        }
+        val factory = BudgetedContextFactory(instructionLimit, operation)
         val output = factory.call { cx ->
             cx.optimizationLevel = -1
             cx.languageVersion = Context.VERSION_ES6
@@ -1259,13 +1273,17 @@ object ExtensionJsRuntime {
 
     private class BudgetedContextFactory(
         private val instructionLimit: Int,
+        private val operation: String,
     ) : ContextFactory() {
         private var instructions = 0
 
         override fun observeInstructionCount(cx: Context, instructionCount: Int) {
             instructions += instructionCount
             if (instructions > instructionLimit) {
-                throw IllegalStateException("Extension exceeded its JavaScript instruction budget.")
+                throw IllegalStateException(
+                    "Extension exceeded its JavaScript instruction budget during $operation " +
+                        "($instructionLimit instructions)."
+                )
             }
         }
     }
