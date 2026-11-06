@@ -433,63 +433,43 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
     private fun updateChapterReadingProgress() {
         if (!::textAdapter.isInitialized || !::textLayoutManager.isInitialized) return
 
-        // The RecyclerView only keeps a moving window of chapters in memory.
-        // Its estimated scroll range therefore changes when adjacent chapters load
-        // or are discarded. Calculate progress from the actual chapter index and
-        // our position among that chapter's adapter items instead.
         val chapterCount = viewModel.book.size()
-        val firstVisiblePosition = textLayoutManager.findFirstVisibleItemPosition()
-        val lastVisiblePosition = textLayoutManager.findLastVisibleItemPosition()
-        // Prefer the chapter represented by the currently visible adapter rows. The
-        // requested/remembered index can briefly lead the adapter while a chapter
-        // transition is being applied, which used to reset the indicator to zero.
-        val visibleChapterIndex = if (
-            firstVisiblePosition >= 0 && lastVisiblePosition >= firstVisiblePosition
-        ) {
-            (firstVisiblePosition..lastVisiblePosition).firstNotNullOfOrNull { position ->
-                textAdapter.getItemOrNull(position)?.index?.takeIf { it in 0 until chapterCount }
-            }
-        } else {
-            null
-        }
-        val chapterIndex = (visibleChapterIndex ?: viewModel.currentIndex)
+        val viewportTop = getTopY()
+        // Use the first text line crossing the reading viewport. Adapter positions are
+        // unstable because the reader keeps a moving window of chapters and paragraph
+        // rows have very different heights. Character offsets remain tied to the chapter.
+        val visibleLine = getAllLines().firstOrNull { it.bottom > viewportTop }
+        val chapterIndex = (visibleLine?.index ?: viewModel.currentIndex)
             .coerceIn(0, (chapterCount - 1).coerceAtLeast(0))
-        val chapterPositions = textAdapter.immutableCurrentList.mapIndexedNotNull { position, item ->
-            position.takeIf { item.index == chapterIndex }
+
+        // TextSpan.start/end are offsets in the complete rendered chapter, not offsets
+        // within an adapter row. The maximum end therefore gives a stable chapter length.
+        val chapterLength = textAdapter.immutableCurrentList
+            .asSequence()
+            .filterIsInstance<TextSpan>()
+            .filter { it.index == chapterIndex }
+            .maxOfOrNull { it.end }
+            ?: 0
+
+        val chapterPosition = if (visibleLine != null && visibleLine.index == chapterIndex) {
+            val lineHeight = (visibleLine.bottom - visibleLine.top).coerceAtLeast(1)
+            val fractionThroughLine = (
+                (viewportTop - visibleLine.top).toFloat() / lineHeight.toFloat()
+            ).coerceIn(0f, 1f)
+            visibleLine.startChar + (
+                (visibleLine.endChar - visibleLine.startChar).coerceAtLeast(0) *
+                    fractionThroughLine
+                ).roundToInt()
+        } else {
+            0
         }
 
-        val chapterFraction = if (chapterPositions.isEmpty()) {
-            0f
-        } else {
-            val firstChapterPosition = chapterPositions.first()
-            val lastChapterPosition = chapterPositions.last()
-            val firstVisible = firstVisiblePosition.coerceAtLeast(firstChapterPosition)
-            val lastVisible = lastVisiblePosition
-            val visibleChapterPosition = (firstVisible..lastVisible).firstOrNull { position ->
-                textAdapter.getItemOrNull(position)?.index == chapterIndex
-            } ?: firstChapterPosition
-            val child = textLayoutManager.findViewByPosition(visibleChapterPosition)
-            val fractionWithinItem = if (child != null && child.height > 0) {
-                (-child.top.toFloat() / child.height.toFloat()).coerceIn(0f, 1f)
-            } else {
-                0f
-            }
-            val chapterItemCount = (lastChapterPosition - firstChapterPosition + 1)
-                .coerceAtLeast(1)
-            ((visibleChapterPosition - firstChapterPosition + fractionWithinItem) /
-                chapterItemCount.toFloat()).coerceIn(0f, 1f)
-        }
-
-        // One continuous 0–100% indicator for the entire book, so crossing a
-        // chapter boundary never resets or jumps back to a RecyclerView-local value.
-        val bookProgress = if (chapterCount <= 0) {
-            0f
-        } else {
-            ((chapterIndex + chapterFraction) / chapterCount.toFloat()).coerceIn(0f, 1f)
-        }
-        binding.readOverflowProgress.progress = (bookProgress * 1000f).roundToInt()
-        // The adapter may still be applying the first chapter's rows when this
-        // callback runs. Visibility follows the reader state, not a transient itemCount.
+        binding.readOverflowProgress.progress = calculateReaderProgress(
+            chapterIndex = chapterIndex,
+            chapterCount = chapterCount,
+            characterPosition = chapterPosition,
+            chapterLength = chapterLength,
+        )
         binding.readOverflowProgress.isVisible = binding.readNormalLayout.isVisible
         if (binding.readOverflowProgress.isVisible) {
             binding.readOverflowProgress.bringToFront()
