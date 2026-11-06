@@ -593,6 +593,38 @@ object BookDownloader2Helper {
         activity.startActivity(myIntent)
     }
 
+    /**
+     * Normal reader launch path: hand the chapter manifest directly to the reader
+     * process instead of serializing it and immediately deserializing it through a URI.
+     * The file URI is retained as a process-death / legacy fallback.
+     */
+    fun openQuickStream(
+        activity: Activity?,
+        data: QuickStreamData,
+        fallbackUri: Uri?,
+    ) {
+        if (activity == null || data.data.isEmpty()) return
+        val sessionId = QuickStreamSessionStore.create(data)
+        val intent = Intent(activity, ReadActivity2::class.java).apply {
+            putExtra(QUICK_STREAM_SESSION_EXTRA, sessionId)
+            if (fallbackUri != null) {
+                setDataAndType(fallbackUri, "quickstream")
+            } else {
+                type = "quickstream"
+            }
+        }
+        try {
+            activity.startActivity(intent)
+        } catch (error: Throwable) {
+            QuickStreamSessionStore.release(sessionId)
+            if (fallbackUri != null) {
+                openQuickStream(activity, fallbackUri)
+            } else {
+                throw error
+            }
+        }
+    }
+
     private fun isScopedStorage(): Boolean {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
     }
@@ -1203,6 +1235,10 @@ object BookDownloader2 {
         BookDownloader2Helper.openQuickStream(activity, uri)
     }
 
+    fun openQuickStream(data: QuickStreamData, fallbackUri: Uri? = null) = main {
+        BookDownloader2Helper.openQuickStream(activity, data, fallbackUri)
+    }
+
     private val streamMutex = Mutex()
 
     // TODO refactor to use immutable
@@ -1243,20 +1279,19 @@ object BookDownloader2 {
                 return
             }
 
-            val uri =
-                activity?.createQuickStream(
-                    QuickStreamData(
-                        QuickStreamMetaData(
-                            res.author,
-                            res.name,
-                            apiName,
-                        ),
-                        res.posterUrl,
-                        res.data.toMutableList()
-                    )
-                )
-
-            openQuickStream(uri)
+            val quickStream = QuickStreamData(
+                QuickStreamMetaData(
+                    res.author,
+                    res.name,
+                    apiName,
+                ),
+                res.posterUrl,
+                res.data.toMutableList()
+            )
+            // Keep the old manifest as a recovery path, but use the in-process session
+            // for normal launches so reader startup does not depend on URI deserialization.
+            val fallbackUri = activity?.createQuickStream(quickStream)
+            openQuickStream(quickStream, fallbackUri)
         }
     }
 
