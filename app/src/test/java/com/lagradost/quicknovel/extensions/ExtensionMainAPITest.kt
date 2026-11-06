@@ -559,6 +559,22 @@ class ExtensionMainAPITest {
               </div>
             </body></html>
         """.trimIndent()
+        val novelHtml = """
+            <!doctype html>
+            <html><body>
+              <div id="novel-report" report-post_id="12345"></div>
+              <div class="novel-title">Sample Novel</div>
+              <div class="cover"><img src="/covers/sample.jpg"></div>
+              <div class="categories"><div class="property-item"><span>Fantasy</span></div></div>
+              <div class="summary"><div class="content"><p>Sample story summary.</p></div></div>
+              <div class="author"><div class="property-item"><span>Test Author</span></div></div>
+              <div class="header-stats"><span class="ongoing">Ongoing</span></div>
+            </body></html>
+        """.trimIndent()
+        val chapterHtml = """
+            <!doctype html>
+            <html><body><div id="content"><p>First chapter paragraph.</p></div></body></html>
+        """.trimIndent()
         try {
             val api = ExtensionMainAPI(
                 extension = extension,
@@ -571,7 +587,18 @@ class ExtensionMainAPITest {
                             ExtensionHttpClient.TextResponse(
                                 url, 200, "text/html", "<html><body><div class=\"novel-list chapters\"></div></body></html>"
                             )
-                        else -> throw AssertionError("Unexpected official Novel Fire request: $url")
+                        "https://novelfire.net/series/sample-novel" ->
+                            ExtensionHttpClient.TextResponse(url, 200, "text/html", novelHtml)
+                        "https://novelfire.net/series/sample-novel/chapter-1" ->
+                            ExtensionHttpClient.TextResponse(url, 200, "text/html", chapterHtml)
+                        else -> if (url.startsWith("https://novelfire.net/ajax/listChapterDataAjax?")) {
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "application/json",
+                                """{"data":[{"title":"Chapter 1","n_sort":"1"}]}"""
+                            )
+                        } else {
+                            throw AssertionError("Unexpected official Novel Fire request: $url")
+                        }
                     }
                 },
             )
@@ -585,6 +612,20 @@ class ExtensionMainAPITest {
             assertTrue(result.url.startsWith("https://novelfire.net/series/sample-novel#qn_ext_path="))
             assertTrue(requestedUrls.contains("https://novelfire.net/search?keyword=sample&page=1"))
             assertTrue(requestedUrls.contains("https://novelfire.net/search?keyword=sample&page=2"))
+
+            val novel = kotlinx.coroutines.runBlocking { api.load(result.url) }
+                as com.lagradost.quicknovel.StreamResponse
+            assertEquals("Sample Novel", novel.name)
+            assertEquals("Test Author", novel.author)
+            assertEquals(1, novel.data.size)
+            assertEquals("Chapter 1", novel.data.single().name)
+            assertTrue(novel.data.single().url.contains("#qn_ext_path="))
+
+            val chapter = kotlinx.coroutines.runBlocking { api.loadHtml(novel.data.single().url) }
+            assertTrue(chapter.orEmpty().contains("First chapter paragraph."))
+            assertTrue(requestedUrls.contains("https://novelfire.net/series/sample-novel"))
+            assertTrue(requestedUrls.contains("https://novelfire.net/series/sample-novel/chapter-1"))
+            assertTrue(requestedUrls.any { it.startsWith("https://novelfire.net/ajax/listChapterDataAjax?") })
         } finally {
             bundle.delete()
         }
