@@ -59,6 +59,10 @@ object ExtensionJsRuntime {
     private const val MAX_SOURCE_BYTES = 8 * 1024 * 1024
     private const val MAX_ARGUMENT_BYTES = 256 * 1024
     private const val MAX_RESULT_BYTES = 2 * 1024 * 1024
+    // Timers in published LNReader bundles are used for retry backoff and cooperative yields.
+    // The bridge executes synchronously, so callbacks run inline after a bounded delay.
+    private const val MAX_TIMER_DELAY_MS = 10_000L
+    private const val MAX_TOTAL_TIMER_DELAY_MS = 30_000L
     // Parsing novel metadata commonly walks a large chapter catalogue. A single
     // global 2M budget was too small for otherwise valid LNReader plugins and caused
     // parseNovel to fail even when the network response and selectors were valid.
@@ -212,6 +216,40 @@ object ExtensionJsRuntime {
             fetchFunction.parentScope = scope
             fetchFunction.prototype = ScriptableObject.getFunctionPrototype(scope)
             ScriptableObject.putProperty(scope, "__qnFetch", fetchFunction)
+            var accumulatedTimerDelayMs = 0L
+            val timerDelayFunction = object : BaseFunction() {
+                override fun call(
+                    context: Context,
+                    callScope: Scriptable,
+                    thisObj: Scriptable,
+                    args: Array<out Any>,
+                ): Any {
+                    val requestedDelayMs = when (val value = args.firstOrNull()) {
+                        is Number -> value.toLong()
+                        null -> 0L
+                        else -> value.toString().toLongOrNull() ?: 0L
+                    }
+                    require(requestedDelayMs in 0..MAX_TIMER_DELAY_MS) {
+                        "Extension timer delay exceeds the 10 second limit."
+                    }
+                    accumulatedTimerDelayMs += requestedDelayMs
+                    require(accumulatedTimerDelayMs <= MAX_TOTAL_TIMER_DELAY_MS) {
+                        "Extension exceeded the 30 second timer budget for one operation."
+                    }
+                    if (requestedDelayMs > 0L) {
+                        try {
+                            Thread.sleep(requestedDelayMs)
+                        } catch (error: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            throw IllegalStateException("Extension timer was interrupted.", error)
+                        }
+                    }
+                    return 0
+                }
+            }
+            timerDelayFunction.parentScope = scope
+            timerDelayFunction.prototype = ScriptableObject.getFunctionPrototype(scope)
+            ScriptableObject.putProperty(scope, "__qnDelay", timerDelayFunction)
             val htmlBridge = HtmlBridge(extension.site)
             val htmlFunction = object : BaseFunction() {
                 override fun call(
@@ -506,6 +544,25 @@ object ExtensionJsRuntime {
                     }, this);
                   };
                   this.FormData = QNFormData;
+
+                  // LNReader plugins use timers for retry delays and to yield between
+                  // chunks of CPU work. QuickNovel's bridge is synchronous, so emulate
+                  // the timer contract inline while enforcing a strict cumulative delay
+                  // budget in the native bridge.
+                  var qnTimerSequence = 0;
+                  this.setTimeout = function(callback, delay) {
+                    if (typeof callback !== 'function') throw new TypeError('setTimeout callback must be a function');
+                    __qnDelay(delay == null ? 0 : delay);
+                    callback();
+                    return ++qnTimerSequence;
+                  };
+                  this.clearTimeout = function() {};
+                  this.setImmediate = function(callback) { return this.setTimeout(callback, 0); };
+                  this.clearImmediate = function() {};
+                  this.console = {
+                    log: function() {}, info: function() {},
+                    warn: function() {}, error: function() {}
+                  };
 
                   function QNPromise(executor) {
                     var self = this;
