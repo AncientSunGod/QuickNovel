@@ -71,6 +71,7 @@ import com.lagradost.quicknovel.ui.mainpage.SearchResponseDialog
 import com.lagradost.quicknovel.ui.settings.searchLangList
 import com.lagradost.quicknovel.ui.settings.searchProvidersList
 import com.lagradost.quicknovel.util.SubtitleHelper
+import com.lagradost.quicknovel.util.Apis.Companion.getApiSettings
 import com.mihon.common.preference.AndroidPreferenceStore
 import com.mihon.presentation.settings.collectAsState
 import kotlinx.collections.immutable.ImmutableSet
@@ -86,6 +87,19 @@ object SearchScreen : Screen {
         val state by viewModel.state.collectAsStateWithLifecycle()
 
         val store = rememberAppSettings()
+        val context = LocalContext.current
+        val extensionRevision by com.lagradost.quicknovel.extensions.ExtensionProviderRegistry.revision
+            .collectAsStateWithLifecycle()
+
+        // The provider picker reads SharedPreferences through AndroidPreferenceStore.
+        // Reconcile that preference set whenever an extension is installed/removed so
+        // newly installed providers and their language are enabled in the live Search UI,
+        // not only in the legacy APIRepository snapshot created at app startup.
+        LaunchedEffect(extensionRevision) {
+            context.getApiSettings()
+            viewModel.onAction(HomeAction.RefreshApis)
+        }
+
         val selectionState by store.provider.searchProvidersList.collectAsState()
         LaunchedEffect(selectionState) {
             viewModel.onAction(HomeAction.RefreshApis)
