@@ -398,15 +398,23 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
 
     private fun getAllLines(): ArrayList<TextVisualLine> {
         val lines: ArrayList<TextVisualLine> = arrayListOf()
+        val firstVisible = textLayoutManager.findFirstVisibleItemPosition()
+        val lastVisible = textLayoutManager.findLastVisibleItemPosition()
+        if (firstVisible == RecyclerView.NO_POSITION ||
+            lastVisible == RecyclerView.NO_POSITION ||
+            lastVisible < firstVisible
+        ) return lines
 
-        for (i in textLayoutManager.findFirstVisibleItemPosition()..textLayoutManager.findLastVisibleItemPosition()) {
+        for (i in firstVisible..lastVisible) {
             lines.addAll(textAdapter.getLines(transformIndexToScrollVisibilityItem(i)))
         }
         return lines
     }
 
     private fun postLines(lines: ArrayList<TextVisualLine>) {
-        if (lines.isEmpty()) {
+        // RecyclerView can dispatch its initial layout callbacks before the async book
+        // loader has constructed the book and renderer. Ignore those callbacks safely.
+        if (!viewModel.isReaderReady() || lines.isEmpty()) {
             return
         }
 
@@ -432,6 +440,10 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
 
     private fun updateChapterReadingProgress() {
         if (!::textAdapter.isInitialized || !::textLayoutManager.isInitialized) return
+        if (!viewModel.isReaderReady()) {
+            binding.readOverflowProgress.isVisible = false
+            return
+        }
 
         val chapterCount = viewModel.book.size()
         val viewportTop = getTopY()
@@ -477,6 +489,10 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
     }
 
     fun onScroll() {
+        if (!viewModel.isReaderReady()) {
+            binding.readOverflowProgress.isVisible = false
+            return
+        }
         postLines(getAllLines())
         updateChapterReadingProgress()
     }
