@@ -1388,10 +1388,13 @@ object ExtensionJsRuntime {
                     nodes.filterIsInstance<Element>().forEach { start ->
                         var sibling = start.nextElementSibling()
                         var visited = 0
-                        while (sibling != null && !sibling.`is`(selector)) {
-                            collected += sibling
-                            sibling = sibling.nextElementSibling()
-                            require(++visited <= maxResults) {
+                        while (sibling != null) {
+                            val currentSibling = sibling ?: break
+                            if (currentSibling.`is`(selector)) break
+                            collected.add(currentSibling)
+                            sibling = currentSibling.nextElementSibling()
+                            visited += 1
+                            require(visited <= maxResults) {
                                 "Cheerio nextUntil exceeded the sibling limit."
                             }
                         }
