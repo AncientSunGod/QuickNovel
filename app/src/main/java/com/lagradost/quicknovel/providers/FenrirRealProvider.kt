@@ -181,15 +181,43 @@ class FenrirRealProvider : MainAPI() {
         }
     }
 
+    private fun findChapterHtml(value: Any?, depth: Int = 0): String? {
+        if (depth > 12) return null
+        return when (value) {
+            is String -> value.takeIf { text ->
+                text.length > 20 && (
+                    text.contains("<p", ignoreCase = true) ||
+                    text.contains("<div", ignoreCase = true) ||
+                    text.contains("<article", ignoreCase = true)
+                )
+            }
+            is List<*> -> value.firstNotNullOfOrNull { findChapterHtml(it, depth + 1) }
+            is Map<*, *> -> value.values.firstNotNullOfOrNull { findChapterHtml(it, depth + 1) }
+            else -> null
+        }
+    }
+
     override suspend fun loadHtml(url: String): String {
         val response = app.get(url).parsed<ChapterResponse>()
-        val secondDataNode = response.nodes.filter { it.type == "data" }.getOrNull(1) ?: throw ErrorLoadingException("Cant' access to chapter: $response")
-        val chapterText = secondDataNode.data?.getOrNull(6)?.toString() ?: throw ErrorLoadingException("Cant' access to chapter: $response")
+        // SvelteKit's serialized node layout changes between page builds. Keep the
+        // legacy fast path, then search nested payload values instead of assuming
+        // chapter HTML is always at nodes[1].data[6].
+        val legacyValue = response.nodes
+            .filter { it.type == "data" }
+            .getOrNull(1)?.data?.getOrNull(6)
+        val chapterText = findChapterHtml(legacyValue)
+            ?: response.nodes.asSequence()
+                .filter { it.type == "data" }
+                .mapNotNull { findChapterHtml(it.data) }
+                .firstOrNull()
+            ?: throw ErrorLoadingException("Fenrir Realm returned no readable chapter content.")
 
         val chapterHtml = Jsoup.parse(chapterText)
         chapterHtml.select("script, style, iframe, svg, noscript").remove()
-        chapterHtml.select("[aria-hidden=\"true\"]").remove()
-        return chapterHtml.html()
+        chapterHtml.select("[aria-hidden=true]").remove()
+        val content = chapterHtml.body().html()
+        if (content.isBlank()) throw ErrorLoadingException("Fenrir Realm returned an empty chapter.")
+        return content
     }
 
 
