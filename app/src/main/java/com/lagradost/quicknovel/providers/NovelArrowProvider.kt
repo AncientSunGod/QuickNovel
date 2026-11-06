@@ -158,13 +158,20 @@ class NovelArrowProvider : MainAPI() {
         return url.substringBefore("?").trimEnd('/').substringAfterLast('/')
     }
 
-    private fun chapterItems(json: JSONObject): JSONArray? =
-        json.optJSONArray("items")
+    private fun chapterItems(json: JSONObject): JSONArray? {
+        val data = json.optJSONObject("data")
+        val item = json.optJSONObject("item")
+        return json.optJSONArray("items")
             ?: json.optJSONArray("chapters")
             ?: json.optJSONArray("data")
-            ?: json.optJSONObject("data")?.optJSONArray("items")
-            ?: json.optJSONObject("data")?.optJSONArray("chapters")
-            ?: json.optJSONObject("item")?.optJSONArray("chapters")
+            ?: data?.optJSONArray("items")
+            ?: data?.optJSONArray("chapters")
+            ?: data?.optJSONArray("results")
+            ?: data?.optJSONArray("docs")
+            ?: data?.optJSONArray("list")
+            ?: item?.optJSONArray("chapters")
+            ?: item?.optJSONObject("novelInfo")?.optJSONArray("chapters")
+    }
 
     private fun JSONObject.firstNonBlank(vararg keys: String): String? =
         keys.firstNotNullOfOrNull { key -> stringOrNull(key) }
@@ -201,11 +208,17 @@ class NovelArrowProvider : MainAPI() {
             if (combined.size == beforePage) break
             val pagination = json.optJSONObject("pagination")
                 ?: json.optJSONObject("meta")
+                ?: json.optJSONObject("data")?.optJSONObject("pagination")
+                ?: json.optJSONObject("data")?.optJSONObject("meta")
             val totalPages = pagination?.let {
-                it.optInt("total_pages", it.optInt("last_page", 0))
+                it.optInt(
+                    "total_pages",
+                    it.optInt("totalPages", it.optInt("last_page", it.optInt("lastPage", 0)))
+                )
             } ?: 0
             if (totalPages > 0 && page >= totalPages) break
-            if (totalPages <= 1 && items.length() < 10) break
+            // Some NovelPing responses omit pagination metadata and return fewer than
+            // ten chapters per page. Continue until an empty/repeated page or the cap.
         }
         return combined.values.toList()
     }
@@ -329,12 +342,17 @@ class NovelArrowProvider : MainAPI() {
             val novelId = parts[1]
             val chapterId = parts[3]
             val json = getJson("$apiBase/novels/$novelId/chapters/$chapterId")
-            val content = json.optJSONObject("item")
-                ?.optJSONObject("chapterInfo")
-                ?.stringOrNull("chapter_content")
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-            return content ?: throw ErrorLoadingException("NovelPing chapter content was empty")
+            val chapterInfo = json.optJSONObject("item")?.optJSONObject("chapterInfo")
+                ?: json.optJSONObject("chapterInfo")
+                ?: json.optJSONObject("data")?.optJSONObject("chapterInfo")
+                ?: json.optJSONObject("data")
+                ?: json.optJSONObject("item")
+            val content = chapterInfo?.firstNonBlank(
+                "chapter_content", "chapterContent", "content", "body", "html"
+            )?.trim()?.takeIf { it.isNotBlank() }
+            return content ?: throw ErrorLoadingException(
+                "NovelPing chapter content was empty (novel $novelId, chapter $chapterId)"
+            )
         }
 
         // Current NovelPing book pages expose chapter content in #chr-content.
