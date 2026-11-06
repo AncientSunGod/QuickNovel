@@ -217,20 +217,38 @@ class FenrirRealProvider : MainAPI() {
                 (function() {
                     const selectors = [
                         ".chapter-content", ".chapter-body", "#chapter-content",
-                        ".reader-content", ".chapter-text", "article", "main"
+                        ".reader-content", ".chapter-text", "[class*=chapter-content]",
+                        "[class*=chapter-body]", "article", "main"
                     ];
                     let attempts = 0;
-                    const timer = setInterval(function() {
+                    let finished = false;
+                    const check = function() {
+                        if (finished) return;
                         for (const selector of selectors) {
                             const element = document.querySelector(selector);
-                            if (element && element.innerText && element.innerText.trim().length > 100) {
-                                clearInterval(timer);
+                            if (!element) continue;
+                            const text = (element.innerText || "").trim();
+                            const paragraphs = element.querySelectorAll("p").length;
+                            // Do not capture the transient Cloudflare/verification spinner
+                            // or the surrounding page chrome as if it were chapter text.
+                            if (text.length > 400 && paragraphs >= 1 &&
+                                !/verifying access|checking your browser|access denied/i.test(text)) {
+                                finished = true;
                                 NativeAndroid.onElementFound(element.innerHTML);
                                 return;
                             }
                         }
-                        if (++attempts >= 40) clearInterval(timer);
+                    };
+                    const observer = new MutationObserver(check);
+                    observer.observe(document.documentElement, { childList: true, subtree: true });
+                    const timer = setInterval(function() {
+                        check();
+                        if (++attempts >= 60) {
+                            clearInterval(timer);
+                            observer.disconnect();
+                        }
                     }, 500);
+                    check();
                 })();
             """.trimIndent()
             runCatching {
