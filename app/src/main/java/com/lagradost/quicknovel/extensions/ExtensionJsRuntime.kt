@@ -1208,6 +1208,18 @@ object ExtensionJsRuntime {
         private val documents = mutableMapOf<Int, Document>()
         private val selections = mutableMapOf<Int, List<Node>>()
 
+        // LNReader bundles commonly use Cheerio's jQuery-style :icontains(text)
+        // extension. Jsoup supports the equivalent case-insensitive :contains(text),
+        // but rejects :icontains as an unknown pseudo-selector.
+        private fun normalizeSelector(selector: String): String =
+            Regex(""":icontains\\(\\s*(['\"])(.*?)\\1\\s*\\)""", RegexOption.IGNORE_CASE)
+                .replace(selector) { match ->
+                    val text = match.groupValues[2]
+                        .replace("\\\\", "\\\\\\\\")
+                        .replace("\\\"", "\\\\\\\"")
+                    ":contains(\\\"$text\\\")"
+                }
+
         fun parseEvents(html: String): String {
             require(html.length <= maxHtmlChars) { "HTML input exceeds the 2 MB limit." }
             val document = Jsoup.parse(html, baseUrl)
@@ -1254,7 +1266,7 @@ object ExtensionJsRuntime {
                     id
                 }
                 "select" -> {
-                    val selector = value.orEmpty()
+                    val selector = normalizeSelector(value.orEmpty())
                     require(selector.isNotBlank() && selector.length <= maxSelectorChars) {
                         "CSS selector is empty or too long."
                     }
@@ -1274,7 +1286,7 @@ object ExtensionJsRuntime {
                     })
                 }
                 "children" -> {
-                    val selector = value.orEmpty()
+                    val selector = normalizeSelector(value.orEmpty())
                     require(selector.length <= maxSelectorChars) { "CSS selector is too long." }
                     val children = nodes.filterIsInstance<Element>().flatMap { it.children() }
                     storeNodes(if (selector.isBlank()) children else children.filter { it.`is`(selector) })
