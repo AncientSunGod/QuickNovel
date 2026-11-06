@@ -488,6 +488,44 @@ internal fun normalizeTextReplacementRules(stored: Any?): List<TextReplacementRu
     }
 }
 
+/**
+ * Apply literal corrections to the chapter's text spans while preserving Android spans
+ * and rebuilding global character offsets. Kept pure for regression testing.
+ */
+internal fun applyTextReplacementRules(
+    rendered: Spanned,
+    input: ArrayList<TextSpan>,
+    rules: List<TextReplacementRule>,
+): Pair<Spanned, ArrayList<TextSpan>> {
+    if (rules.isEmpty()) return rendered to input
+
+    val builder = SpannableStringBuilder()
+    val output = ArrayList<TextSpan>(input.size)
+    input.forEach { original ->
+        val text = SpannableStringBuilder(original.text)
+        // Never modify image spans or their embedded drawable metadata.
+        if (text.getSpans<AsyncDrawableSpan>().isEmpty()) {
+            rules.forEach { rule ->
+                if (rule.find.isNotEmpty()) {
+                    var from = 0
+                    while (from <= text.length - rule.find.length) {
+                        val start = text.indexOf(rule.find, from, ignoreCase = true)
+                        if (start < 0) break
+                        text.replace(start, start + rule.find.length, rule.replace)
+                        from = start + rule.replace.length
+                    }
+                }
+            }
+        }
+        val start = builder.length
+        builder.append(text)
+        val end = builder.length
+        builder.append('\n')
+        output.add(TextSpan(text, start, end, original.index, original.innerIndex))
+    }
+    return builder to output
+}
+
 
 data class ChapterUpdate(
     val data: ArrayList<SpanDisplay>,
@@ -1061,36 +1099,8 @@ class ReadActivityViewModel : ViewModel() {
     private fun applyTextReplacements(
         rendered: Spanned,
         input: ArrayList<TextSpan>
-    ): Pair<Spanned, ArrayList<TextSpan>> {
-        val rules = getTextReplacements()
-        if (rules.isEmpty()) return rendered to input
-
-        val builder = SpannableStringBuilder()
-        val output = ArrayList<TextSpan>(input.size)
-        input.forEach { original ->
-            val text = SpannableStringBuilder(original.text)
-            // Never modify image spans or their embedded drawable metadata.
-            if (text.getSpans<AsyncDrawableSpan>().isEmpty()) {
-                rules.forEach { rule ->
-                    if (rule.find.isNotEmpty()) {
-                        var from = 0
-                        while (from <= text.length - rule.find.length) {
-                            val start = text.indexOf(rule.find, from, ignoreCase = true)
-                            if (start < 0) break
-                            text.replace(start, start + rule.find.length, rule.replace)
-                            from = start + rule.replace.length
-                        }
-                    }
-                }
-            }
-            val start = builder.length
-            builder.append(text)
-            val end = builder.length
-            builder.append('\n')
-            output.add(TextSpan(text, start, end, original.index, original.innerIndex))
-        }
-        return builder to output
-    }
+    ): Pair<Spanned, ArrayList<TextSpan>> =
+        applyTextReplacementRules(rendered, input, getTextReplacements())
 
     @Throws(MLException::class)
     private suspend fun translate(
