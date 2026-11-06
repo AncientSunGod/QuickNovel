@@ -90,6 +90,14 @@ internal fun extractFreeWebNovelArticleId(document: Document): String? {
     }
 }
 
+/** The upstream source prefers its Disqus identifier for the archive's acode. */
+internal fun extractFreeWebNovelAcode(document: Document, fallback: String): String =
+    document.selectFirst("[data-disqus-identifier]")
+        ?.attr("data-disqus-identifier")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: fallback
+
 open class FreewebnovelProvider : MainAPI() {
     private companion object { const val MAX_TOC_PAGES = 200 }
     override val name = "FreeWebNovel"
@@ -181,7 +189,7 @@ open class FreewebnovelProvider : MainAPI() {
     suspend fun getChapterList(doc: Document, url: String): List<ChapterData> {
         val pageUrl = url.substringBefore("?").substringBefore("#")
         val baseUrl = pageUrl.removeSuffix("/").removeSuffix(".html")
-        val acode = getAcode(baseUrl)
+        val acode = extractFreeWebNovelAcode(doc, getAcode(baseUrl))
         val chaptersByUrl = linkedMapOf<String, ChapterData>()
 
         fun parseTocPage(tocDocument: Document) {
@@ -212,6 +220,7 @@ open class FreewebnovelProvider : MainAPI() {
             doc.selectFirst("picture source")?.attr("srcset")?.substringBefore(",")?.substringBefore(" "),
         )
         val novelId = extractFreeWebNovelArticleId(doc)
+            ?: Regex("""(\d+)""").find(pageUrl)?.groupValues?.getOrNull(1)
             ?: articleImageUrls.firstNotNullOfOrNull { imageUrl ->
                 Regex("""(\\d+)s\\.(?:jpe?g|png|webp)""", RegexOption.IGNORE_CASE)
                     .find(imageUrl)?.groupValues?.getOrNull(1)
