@@ -1294,7 +1294,7 @@ class ReadActivityViewModel : ViewModel() {
                     val data = intent.data ?: throw ErrorLoadingException(
                         "QuickStream session expired and no recovery manifest was attached."
                     )
-                    val input = context.contentResolver.openInputStream(data)
+                    val input = appContext.contentResolver.openInputStream(data)
                         ?: throw ErrorLoadingException("Unable to open QuickStream recovery manifest")
                     val manifest = input.bufferedReader().use { it.readText() }
                     val quickStream = DataStore.mapper.readValue<QuickStreamData>(manifest)
@@ -1303,7 +1303,7 @@ class ReadActivityViewModel : ViewModel() {
 
                 else -> {
                     val data = intent.data ?: throw ErrorLoadingException("Empty EPUB intent")
-                    val fd = context.contentResolver.openFileDescriptor(data, "r")
+                    val fd = appContext.contentResolver.openFileDescriptor(data, "r")
                         ?: throw ErrorLoadingException("Unable to open file descriptor")
                     val zipFile = AndroidZipFile(fd, "")
                     val epub = EpubReader().readEpubLazy(zipFile, "utf-8")
@@ -1333,7 +1333,7 @@ class ReadActivityViewModel : ViewModel() {
                     val desiredChapterIndex =
                         (0 until book.size()).firstOrNull {
                             loadedBook.value.getChapterTitle(it)
-                                .asStringNull(context) == desiredChapterName
+                                .asStringNull(appContext) == desiredChapterName
                         } ?: getKey<Int>(EPUB_CURRENT_POSITION, book.title()) ?: 0
                     val loadedChapterIndex = maxOf(desiredChapterIndex, 0)
 
@@ -1373,7 +1373,7 @@ class ReadActivityViewModel : ViewModel() {
                             error.message ?: "The reader could not initialize this book."
                         )
                     )
-                    return@ioSafe
+                    return@launch
                 }
             }
 
