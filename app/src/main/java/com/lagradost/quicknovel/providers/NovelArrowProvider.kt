@@ -158,17 +158,78 @@ class NovelArrowProvider : MainAPI() {
         return url.substringBefore("?").trimEnd('/').substringAfterLast('/')
     }
 
+    private fun chapterItems(json: JSONObject): JSONArray? =
+        json.optJSONArray("items")
+            ?: json.optJSONArray("chapters")
+            ?: json.optJSONArray("data")
+            ?: json.optJSONObject("data")?.optJSONArray("items")
+            ?: json.optJSONObject("item")?.optJSONArray("chapters")
+
+    private fun JSONObject.firstNonBlank(vararg keys: String): String? =
+        keys.firstNotNullOfOrNull { key -> stringOrNull(key) }
+
     private suspend fun getChapters(novelId: String): List<ChapterData> {
-        val json = getJson("$apiBase/novels/$novelId/chapters?sort=asc")
-        val items = json.optJSONArray("items") ?: JSONArray()
-        val chapters = mutableListOf<ChapterData>()
-        for (index in 0 until items.length()) {
-            val item = items.optJSONObject(index) ?: continue
-            val chapterId = item.stringOrNull("chapter_id") ?: continue
-            val title = item.stringOrNull("chapter_name") ?: "Chapter ${index + 1}"
-            chapters += newChapterData(title, "$apiBase/novels/$novelId/chapters/$chapterId")
+        val combined = linkedMapOf<String, ChapterData>()
+        // The site has changed the response envelope and chapter field names before.
+        // Accept the common API shapes and page until the server stops returning new rows.
+        for (page in 1..MAX_CHAPTER_PAGES) {
+            val pageQuery = if (page == 1) "" else "&page=$page"
+            val json = getJson("$apiBase/novels/$novelId/chapters?sort=asc$pageQuery")
+            val items = chapterItems(json) ?: break
+            if (items.length() == 0) break
+
+            val beforePage = combined.size
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                val chapterId = item.firstNonBlank(
+                    "chapter_id", "chapterId", "id", "_id"
+                )
+                val chapterUrl = item.firstNonBlank("url", "path", "chapter_url", "chapterUrl")
+                val title = item.firstNonBlank(
+                    "chapter_name", "chapter_title", "title", "name"
+                ) ?: "Chapter ${combined.size + 1}"
+                val targetUrl = when {
+                    !chapterUrl.isNullOrBlank() && chapterUrl.startsWith("http") -> chapterUrl
+                    !chapterUrl.isNullOrBlank() -> "$mainUrl${if (chapterUrl.startsWith("/")) "" else "/"}$chapterUrl"
+                    !chapterId.isNullOrBlank() -> "$apiBase/novels/$novelId/chapters/$chapterId"
+                    else -> continue
+                }
+                combined.putIfAbsent(targetUrl, newChapterData(title, targetUrl))
+            }
+
+            if (combined.size == beforePage) break
+            val pagination = json.optJSONObject("pagination")
+                ?: json.optJSONObject("meta")
+            val totalPages = pagination?.optInt(
+                "total_pages",
+                pagination.optInt("last_page", 0)
+            ) ?: 0
+            if (totalPages > 0 && page >= totalPages) break
+            if (totalPages <= 1 && items.length() < 10) break
         }
-        return chapters
+        return combined.values.toList()
+    }
+
+    private suspend fun getHtmlChapterFallback(info: JSONObject): List<ChapterData> {
+        val slug = info.firstNonBlank("novel_slug", "slug", "url_slug") ?: return emptyList()
+        val bookUrl = "$mainUrl/book/$slug"
+        val document = app.get(bookUrl).document
+        val linkedChapters = document.select(
+            "#chapter-list a, #chapterList a, .chapter-list a, .chapter-list-content a, a[href*='chapter-']"
+        ).mapNotNull { link ->
+            val href = link.attr("href").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val chapterUrl = if (href.startsWith("http")) href else "$mainUrl${if (href.startsWith("/")) "" else "/"}$href"
+            val title = link.text().trim().ifBlank { link.attr("title").trim() }
+            if (title.isBlank()) return@mapNotNull null
+            newChapterData(title, chapterUrl)
+        }.distinctBy { it.url }
+
+        if (linkedChapters.isNotEmpty()) return linkedChapters
+        val firstChapterUrl = document.selectFirst("meta[property=og:novel:read_url]")
+            ?.attr("content")
+            ?.takeIf { it.startsWith("http") }
+            ?: return emptyList()
+        return listOf(newChapterData("Chapter 1", firstChapterUrl))
     }
 
     override suspend fun load(url: String): LoadResponse {
@@ -181,7 +242,9 @@ class NovelArrowProvider : MainAPI() {
 
         val title = info.stringOrNull("novel_name")
             ?: throw ErrorLoadingException("NovelArrow title was not found")
-        val chapters = getChapters(novelId)
+        val chapters = getChapters(novelId).ifEmpty {
+            runCatching { getHtmlChapterFallback(info) }.getOrDefault(emptyList())
+        }
         val synopsis = info.stringOrNull("novel_desc")?.let { html ->
             val body = Jsoup.parse(html).body()
             body.select("p").joinToString("\n\n") { it.text() }.ifBlank { body.text() }
@@ -212,6 +275,7 @@ class NovelArrowProvider : MainAPI() {
 
     private companion object {
         const val MAX_SEARCH_PAGES = 10
+        const val MAX_CHAPTER_PAGES = 100
         const val MAX_SEARCH_RESULTS = 500
     }
 
