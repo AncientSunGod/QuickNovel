@@ -221,20 +221,19 @@ class MainActivity : AppCompatActivity() {
             RedditProvider.getName(url)?.let { name ->
                 try {
                     Coroutines.main {
-                        val uri = withContext(Dispatchers.IO) {
-                            createQuickStream(
-                                QuickStreamData(
-                                    QuickStreamMetaData(
-                                        "Not found",
-                                        name,
-                                        reddit.name,
-                                    ),
-                                    null,
-                                    mutableListOf(ChapterData("Single Post", url, null, null))
-                                )
-                            )
+                        val quickStream = QuickStreamData(
+                            QuickStreamMetaData(
+                                "Not found",
+                                name,
+                                reddit.name,
+                            ),
+                            null,
+                            mutableListOf(ChapterData("Single Post", url, null, null))
+                        )
+                        val fallbackUri = withContext(Dispatchers.IO) {
+                            createQuickStream(quickStream)
                         }
-                        openQuickStream(uri)
+                        openQuickStream(quickStream, fallbackUri)
                     }
                 } catch (e: Exception) {
                     logError(e)
