@@ -667,8 +667,8 @@ object BookDownloader2Helper {
                 return null
             }
 
-            // Stream manifests live in the app's private cache. They do not need
-            // legacy external-storage permissions. A file:// URI cannot be opened
+            // Stream manifests live in the app's private files directory. They do not
+            // need legacy external-storage permissions. A file:// URI cannot be opened
             // by ReadActivity2 through ContentResolver; expose it through our
             // configured FileProvider instead.
             val fileName = getFilePath(data.meta, -1)
