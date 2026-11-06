@@ -1215,7 +1215,7 @@ object ExtensionJsRuntime {
             Regex(""":icontains\(\s*(['"])(.*?)\1\s*\)""", RegexOption.IGNORE_CASE)
                 .replace(selector) { match ->
                     val literalText = Regex.escape(match.groupValues[2])
-                    ":matches((?i).*\${literalText}.*)"
+                    ":matches((?i).*" + literalText + ".*)"
                 }.replace(Regex("""\+\s*:matches"""), "+ :matches")
 
         fun parseEvents(html: String): String {
