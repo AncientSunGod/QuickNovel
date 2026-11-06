@@ -58,7 +58,8 @@ class ReaderActivitySmokeTest {
             ActivityScenario.launch<ReadActivity2>(intent).use { scenario ->
                 val deadline = SystemClock.uptimeMillis() + 20_000L
                 var rendered = false
-                while (!rendered && SystemClock.uptimeMillis() < deadline) {
+                var readerError: String? = null
+                while (!rendered && readerError == null && SystemClock.uptimeMillis() < deadline) {
                     InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                     scenario.onActivity { activity ->
                         val recycler = activity.findViewById<RecyclerView>(R.id.real_text)
@@ -70,11 +71,15 @@ class ReaderActivitySmokeTest {
                                 }
                             }
                         }
+                        val failure = activity.findViewById<TextView>(R.id.failText)
+                        if (failure?.text?.isNotBlank() == true) {
+                            readerError = failure.text.toString()
+                        }
                     }
                     if (!rendered) SystemClock.sleep(100)
                 }
                 assertTrue(
-                    "QuickStream should open the reader and render the provider's chapter content.",
+                    "QuickStream should render provider chapter content. Reader error: ${readerError ?: "no visible error; inspect the saved crash report and logcat"}",
                     rendered,
                 )
             }
