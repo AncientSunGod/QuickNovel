@@ -403,6 +403,7 @@ object SettingScreen : SearchableSettings {
                                                                     )
                                                                 }
                                                                 APIRepository.providersActive = context.getApiSettings()
+                                                                com.lagradost.quicknovel.extensions.ExtensionProviderRegistry.notifyChanged()
                                                                 repositoryStatus = "${installed.name} uninstalled. Providers refreshed."
                                                             } else {
                                                                 repositoryStatus = "Could not uninstall ${installed.name}."
@@ -601,6 +602,7 @@ object SettingScreen : SearchableSettings {
                                                         settings.provider.searchLangList.get() + extensionProviders.map { it.lang }
                                                     )
                                                     APIRepository.providersActive = context.getApiSettings()
+                                                    com.lagradost.quicknovel.extensions.ExtensionProviderRegistry.notifyChanged()
                                                     repositoryStatus = "${entry.name} installed. Providers refreshed."
                                                 }.onFailure { error ->
                                                     repositoryStatus = error.message ?: "Could not install ${entry.name}."
