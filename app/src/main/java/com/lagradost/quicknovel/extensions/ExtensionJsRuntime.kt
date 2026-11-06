@@ -545,20 +545,41 @@ object ExtensionJsRuntime {
                   };
                   this.FormData = QNFormData;
 
-                  // LNReader plugins use timers for retry delays and to yield between
-                  // chunks of CPU work. QuickNovel's bridge is synchronous, so emulate
-                  // the timer contract inline while enforcing a strict cumulative delay
-                  // budget in the native bridge.
+                  // LNReader plugins use timers for retry delays and cooperative yields.
+                  // Queue callbacks and drain them after the plugin operation starts. This
+                  // avoids recursive async-generator continuation when a plugin yields with
+                  // setTimeout(0), while retaining the bridge's deterministic sync contract.
                   var qnTimerSequence = 0;
+                  var qnTimerQueue = [];
+                  function qnScheduleTimer(callback, delay, args) {
+                    if (typeof callback !== 'function') throw new TypeError('Timer callback must be a function');
+                    var requestedDelay = Number(delay == null ? 0 : delay);
+                    if (!isFinite(requestedDelay) || requestedDelay < 0 || requestedDelay > 10000)
+                      throw new Error('Extension timer delay exceeds the 10 second limit.');
+                    var id = ++qnTimerSequence;
+                    qnTimerQueue.push({id:id, callback:callback, delay:requestedDelay, args:args});
+                    return id;
+                  }
                   this.setTimeout = function(callback, delay) {
-                    if (typeof callback !== 'function') throw new TypeError('setTimeout callback must be a function');
-                    __qnDelay(delay == null ? 0 : delay);
-                    callback();
-                    return ++qnTimerSequence;
+                    return qnScheduleTimer(callback, delay, Array.prototype.slice.call(arguments, 2));
                   };
-                  this.clearTimeout = function() {};
-                  this.setImmediate = function(callback) { return this.setTimeout(callback, 0); };
-                  this.clearImmediate = function() {};
+                  this.clearTimeout = function(id) {
+                    qnTimerQueue = qnTimerQueue.filter(function(timer) { return timer.id !== id; });
+                  };
+                  this.setImmediate = function(callback) {
+                    return qnScheduleTimer(callback, 0, Array.prototype.slice.call(arguments, 1));
+                  };
+                  this.clearImmediate = this.clearTimeout;
+                  this.__qnRunTimers = function() {
+                    var executed = 0;
+                    while (qnTimerQueue.length) {
+                      if (++executed > 10000)
+                        throw new Error('Extension exceeded the 10000 timer-callback limit.');
+                      var timer = qnTimerQueue.shift();
+                      __qnDelay(timer.delay);
+                      timer.callback.apply(undefined, timer.args);
+                    }
+                  };
                   this.console = {
                     log: function() {}, info: function() {},
                     warn: function() {}, error: function() {}
@@ -1195,9 +1216,11 @@ object ExtensionJsRuntime {
                     var resolved = false, rejected = null;
                     result.then(function(value) { result = value; resolved = true; },
                                 function(error) { rejected = error; });
+                    if (!resolved && !rejected) __qnRunTimers();
                     if (rejected) throw rejected;
-                    if (!resolved) throw new Error('Extension operation did not resolve synchronously.');
+                    if (!resolved) throw new Error('Extension operation did not resolve after its queued timers.');
                   }
+                  __qnRunTimers();
                   return JSON.stringify(result === undefined ? null : result);
                 })()
             """.trimIndent()
