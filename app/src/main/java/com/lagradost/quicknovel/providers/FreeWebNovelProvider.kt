@@ -193,7 +193,9 @@ open class FreewebnovelProvider : MainAPI() {
         val chaptersByUrl = linkedMapOf<String, ChapterData>()
 
         fun parseTocPage(tocDocument: Document) {
-            parseFreeWebNovelTocLinks(tocDocument).forEach { chapter ->
+            // The detail page may belong to LibRead while its archive API is hosted
+            // on FreeWebNovel. Resolve initial-page links against the actual page host.
+            parseFreeWebNovelTocLinks(tocDocument, siteRoot = mainUrl).forEach { chapter ->
                 chaptersByUrl.putIfAbsent(chapter.url, chapter)
             }
         }
