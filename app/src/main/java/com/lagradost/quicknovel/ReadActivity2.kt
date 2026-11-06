@@ -865,7 +865,9 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
 
     override fun onDestroy() {
         viewModel.stopTTS()
-        QuickStreamSessionStore.release(intent?.getStringExtra(QUICK_STREAM_SESSION_EXTRA))
+        if (isFinishing) {
+            QuickStreamSessionStore.release(intent?.getStringExtra(QUICK_STREAM_SESSION_EXTRA))
+        }
         this.unregisterReceiver(mBatInfoReceiver)
         super.onDestroy()
     }
