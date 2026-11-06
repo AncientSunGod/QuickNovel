@@ -72,6 +72,7 @@ import com.lagradost.quicknovel.mvvm.logError
 import com.lagradost.quicknovel.ui.txt
 import com.lagradost.quicknovel.util.Apis.Companion.apis
 import com.lagradost.quicknovel.util.Apis.Companion.getApiSettings
+import com.lagradost.quicknovel.util.Apis.Companion.getInstalledExtensionProviderInfo
 import com.lagradost.quicknovel.extensions.ExtensionSettingsManager
 import com.lagradost.quicknovel.extensions.ExtensionSetting
 import com.lagradost.quicknovel.extensions.InstalledExtension
@@ -391,12 +392,18 @@ object SettingScreen : SearchableSettings {
                                                             TextButton(onClick = { openPluginSettings(installed) }) { Text("Settings") }
                                                         }
                                                         TextButton(onClick = {
+                                                            val removedProvider = getInstalledExtensionProviderInfo(context)
+                                                                .firstOrNull { it.id == installed.id }
                                                             val removed = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.uninstall(context, installed.id)
                                                             installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
                                                             if (removed) {
+                                                                removedProvider?.let { provider ->
+                                                                    settings.provider.searchProvidersList.set(
+                                                                        settings.provider.searchProvidersList.get() - provider.name
+                                                                    )
+                                                                }
                                                                 APIRepository.providersActive = context.getApiSettings()
-                                                                repositoryStatus = "${installed.name} uninstalled. Reloading providers…"
-                                                                activity?.recreate()
+                                                                repositoryStatus = "${installed.name} uninstalled. Providers refreshed."
                                                             } else {
                                                                 repositoryStatus = "Could not uninstall ${installed.name}."
                                                             }
@@ -586,12 +593,15 @@ object SettingScreen : SearchableSettings {
                                                 }
                                                 result.onSuccess {
                                                     installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
-                                                    // Provider lists are cached by the home/search ViewModels. Refresh the
-                                                    // enabled-provider set and recreate the activity so newly installed
-                                                    // extensions are visible immediately instead of requiring a manual restart.
+                                                    val extensionProviders = getInstalledExtensionProviderInfo(context)
+                                                    settings.provider.searchProvidersList.set(
+                                                        settings.provider.searchProvidersList.get() + extensionProviders.map { it.name }
+                                                    )
+                                                    settings.provider.searchLangList.set(
+                                                        settings.provider.searchLangList.get() + extensionProviders.map { it.lang }
+                                                    )
                                                     APIRepository.providersActive = context.getApiSettings()
-                                                    repositoryStatus = "${entry.name} installed. Reloading providers…"
-                                                    activity?.recreate()
+                                                    repositoryStatus = "${entry.name} installed. Providers refreshed."
                                                 }.onFailure { error ->
                                                     repositoryStatus = error.message ?: "Could not install ${entry.name}."
                                                 }
