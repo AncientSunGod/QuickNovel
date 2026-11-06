@@ -438,7 +438,21 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
         // or are discarded. Calculate progress from the actual chapter index and
         // our position among that chapter's adapter items instead.
         val chapterCount = viewModel.book.size()
-        val chapterIndex = (viewModel.desiredIndex?.index ?: viewModel.currentIndex)
+        val firstVisiblePosition = textLayoutManager.findFirstVisibleItemPosition()
+        val lastVisiblePosition = textLayoutManager.findLastVisibleItemPosition()
+        // Prefer the chapter represented by the currently visible adapter rows. The
+        // requested/remembered index can briefly lead the adapter while a chapter
+        // transition is being applied, which used to reset the indicator to zero.
+        val visibleChapterIndex = if (
+            firstVisiblePosition >= 0 && lastVisiblePosition >= firstVisiblePosition
+        ) {
+            (firstVisiblePosition..lastVisiblePosition).firstNotNullOfOrNull { position ->
+                textAdapter.getItemOrNull(position)?.index?.takeIf { it in 0 until chapterCount }
+            }
+        } else {
+            null
+        }
+        val chapterIndex = (visibleChapterIndex ?: viewModel.currentIndex)
             .coerceIn(0, (chapterCount - 1).coerceAtLeast(0))
         val chapterPositions = textAdapter.immutableCurrentList.mapIndexedNotNull { position, item ->
             position.takeIf { item.index == chapterIndex }
@@ -449,9 +463,8 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
         } else {
             val firstChapterPosition = chapterPositions.first()
             val lastChapterPosition = chapterPositions.last()
-            val firstVisible = textLayoutManager.findFirstVisibleItemPosition()
-                .coerceAtLeast(firstChapterPosition)
-            val lastVisible = textLayoutManager.findLastVisibleItemPosition()
+            val firstVisible = firstVisiblePosition.coerceAtLeast(firstChapterPosition)
+            val lastVisible = lastVisiblePosition
             val visibleChapterPosition = (firstVisible..lastVisible).firstOrNull { position ->
                 textAdapter.getItemOrNull(position)?.index == chapterIndex
             } ?: firstChapterPosition
