@@ -129,9 +129,29 @@ class NovelArrowProvider : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val encoded = Uri.encode(query.trim())
-        val url = "$apiBase/novels?page=1&status=all&genre=&keyword=$encoded"
-        val json = getJson(url)
-        return parseNovelItems(json.optJSONArray("items") ?: JSONArray())
+        val combined = linkedMapOf<String, SearchResponse>()
+        var previousPageKeys: List<String>? = null
+
+        // The API returns a small page by default. Fetch subsequent pages instead of
+        // silently presenting the first ten matches as the complete search result.
+        for (page in 1..MAX_SEARCH_PAGES) {
+            val url = "$apiBase/novels?page=$page&status=all&genre=&keyword=$encoded"
+            val json = getJson(url)
+            val pageResults = parseNovelItems(json.optJSONArray("items") ?: JSONArray())
+            val pageKeys = pageResults.map { it.url }
+
+            // Some upstream responses ignore the page parameter. Stop rather than
+            // repeating the same novels or making unnecessary requests.
+            if (pageKeys.isNotEmpty() && pageKeys == previousPageKeys) break
+            previousPageKeys = pageKeys
+
+            pageResults.forEach { result ->
+                combined.putIfAbsent(result.url, result)
+            }
+            if (pageResults.isEmpty() || combined.size >= MAX_SEARCH_RESULTS) break
+        }
+
+        return combined.values.take(MAX_SEARCH_RESULTS)
     }
 
     private fun novelIdFromUrl(url: String): String {
@@ -188,6 +208,11 @@ class NovelArrowProvider : MainAPI() {
                 ?.let { (it / 5f * 1000f).toInt().coerceIn(0, 1000) }
             peopleVoted = info.optInt("voteCount", 0).takeIf { it > 0 }
         }
+    }
+
+    private companion object {
+        const val MAX_SEARCH_PAGES = 10
+        const val MAX_SEARCH_RESULTS = 500
     }
 
     override suspend fun loadHtml(url: String): String? {
