@@ -393,7 +393,13 @@ object SettingScreen : SearchableSettings {
                                                         TextButton(onClick = {
                                                             val removed = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.uninstall(context, installed.id)
                                                             installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
-                                                            repositoryStatus = if (removed) "${installed.name} uninstalled." else "Could not uninstall ${installed.name}."
+                                                            if (removed) {
+                                                                APIRepository.providersActive = context.getApiSettings()
+                                                                repositoryStatus = "${installed.name} uninstalled. Reloading providers…"
+                                                                activity?.recreate()
+                                                            } else {
+                                                                repositoryStatus = "Could not uninstall ${installed.name}."
+                                                            }
                                                         }) { Text("Uninstall") }
                                                     }
                                                 }
