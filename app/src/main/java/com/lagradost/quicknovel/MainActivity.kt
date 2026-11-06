@@ -39,7 +39,6 @@ import com.lagradost.quicknovel.BookDownloader2.openQuickStream
 import com.lagradost.quicknovel.BookDownloader2Helper.IMPORT_SOURCE
 import com.lagradost.quicknovel.BookDownloader2Helper.IMPORT_SOURCE_PDF
 import com.lagradost.quicknovel.BookDownloader2Helper.checkWrite
-import com.lagradost.quicknovel.BookDownloader2Helper.createQuickStream
 import com.lagradost.quicknovel.BookDownloader2Helper.requestRW
 import com.lagradost.quicknovel.CommonActivity.activity
 import com.lagradost.quicknovel.CommonActivity.showToast
@@ -230,10 +229,7 @@ class MainActivity : AppCompatActivity() {
                             null,
                             mutableListOf(ChapterData("Single Post", url, null, null))
                         )
-                        val fallbackUri = withContext(Dispatchers.IO) {
-                            createQuickStream(quickStream)
-                        }
-                        openQuickStream(quickStream, fallbackUri)
+                        openQuickStream(quickStream)
                     }
                 } catch (e: Exception) {
                     logError(e)
