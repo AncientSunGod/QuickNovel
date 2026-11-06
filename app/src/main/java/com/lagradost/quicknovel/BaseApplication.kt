@@ -16,7 +16,7 @@ import com.lagradost.quicknovel.DataStore.setKey
 import java.lang.ref.WeakReference
 
 class BaseApplication : Application(), SingletonImageLoader.Factory, Configuration.Provider  {
-    override fun attachBaseContext(base: Context?) {
+    override fun onCreate() {\n        super.onCreate()\n        CrashLog.install(this)\n    }\n\n    override fun attachBaseContext(base: Context?) {
         super.attachBaseContext(base)
         context = base
     }
