@@ -133,7 +133,7 @@ open class FreewebnovelProvider : MainAPI() {
         parseTocPage(doc)
         val selectedPageCount = doc.select("#indexselect option").size
         val scriptedPageCount = doc.select("script").firstNotNullOfOrNull { script ->
-            Regex("""totalPage:\\s*(\\d+)""")
+            Regex("""totalPage:\s*(\d+)""")
                 .find(script.html())?.groupValues?.getOrNull(1)?.toIntOrNull()
         } ?: 1
         val totalPages = (selectedPageCount.takeIf { it > 0 } ?: scriptedPageCount)
@@ -162,7 +162,7 @@ open class FreewebnovelProvider : MainAPI() {
         val novelId = doc.selectFirst("a.set-case.add")?.attr("data-articleid")
             ?.takeIf { it.isNotBlank() }
             ?: articleImageUrls.firstNotNullOfOrNull { imageUrl ->
-                Regex("""(\\d+)s\\.(?:jpe?g|png|webp)""", RegexOption.IGNORE_CASE)
+                Regex("""(\d+)s\.(?:jpe?g|png|webp)""", RegexOption.IGNORE_CASE)
                     .find(imageUrl)?.groupValues?.getOrNull(1)
             }
 
@@ -204,7 +204,7 @@ open class FreewebnovelProvider : MainAPI() {
             if (chapterName.isBlank()) return@mapNotNull null
             newChapterData(name = chapterName, url = chapterUrl)
         }.distinctBy { it.url }.sortedBy { chapter ->
-            Regex("""chapter[-_/]?(\\d+)""", RegexOption.IGNORE_CASE)
+            Regex("""chapter[-_/]?(\d+)""", RegexOption.IGNORE_CASE)
                 .find(chapter.url)?.groupValues?.getOrNull(1)?.toLongOrNull()
                 ?: Long.MAX_VALUE
         }
