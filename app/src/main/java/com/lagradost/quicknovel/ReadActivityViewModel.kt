@@ -1083,16 +1083,31 @@ class ReadActivityViewModel : ViewModel() {
         val targetIndex = desiredIndex?.index ?: currentIndex
         if (::book.isInitialized && targetIndex >= 0) {
             ioSafe {
-                while (chapterMutex.withLock { loading.contains(targetIndex) }) {
-                    delay(40)
+                try {
+                    while (chapterMutex.withLock { loading.contains(targetIndex) }) {
+                        delay(40)
+                    }
+                    loadIndividualChapter(
+                        targetIndex,
+                        reload = false,
+                        notify = true,
+                        reTranslate = true,
+                    )
+                    updateReadArea(seekToDesired = false)
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    context?.let {
+                        CrashLog.recordNonFatal(it, "Text replacement re-render", error)
+                    }
+                    logError(error)
+                    _loadingStatus.postValue(
+                        Resource.Failure(
+                            error,
+                            error.message ?: "Could not apply text replacements. The diagnostic log was saved."
+                        )
+                    )
                 }
-                loadIndividualChapter(
-                    targetIndex,
-                    reload = false,
-                    notify = true,
-                    reTranslate = true,
-                )
-                updateReadArea(seekToDesired = false)
             }
         }
     }
