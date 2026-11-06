@@ -955,12 +955,13 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
-    fun supportsBoundedTimerAndConsoleGlobalsUsedByPublishedBundles() {
+    fun supportsQueuedNestedTimersAndConsoleGlobalsUsedByPublishedBundles() {
         val (extension, file) = extension(
             "module.exports = { searchNovels: function(term) { " +
                 "return new Promise(function(resolve) { " +
-                "setTimeout(function() { console.warn('retry complete'); " +
-                "resolve([{name:term,path:'/timer-test'}]); }, 1); " +
+                "setTimeout(function() { console.warn('first yield'); " +
+                "setTimeout(function() { console.info('retry complete'); " +
+                "resolve([{name:term,path:'/timer-test'}]); }, 1); }, 1); " +
                 "}); } };"
         )
         try {
