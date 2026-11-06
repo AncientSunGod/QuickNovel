@@ -157,4 +157,37 @@ class FreeWebNovelProviderTest {
         assertEquals("https://libread.com/novel/sample/chapter-1", chapters.single().url)
     }
 
+
+    @Test
+    fun extractsTotalChapterCountFromTheOfficialPaginationScript() {
+        val document = Jsoup.parse(
+            """<script>window.chapterPagination = { totalChapters: 1682 };</script>""",
+            "https://freewebnovel.com/novel/sample",
+        )
+
+        assertEquals(1682, extractFreeWebNovelTotalChapters(document))
+    }
+
+    @Test
+    fun extractsTotalChapterCountFromIndexMetadata() {
+        val document = Jsoup.parse(
+            """<div id="indexListPage" data-total-chapters="987"></div>""",
+            "https://freewebnovel.com/novel/sample",
+        )
+
+        assertEquals(987, extractFreeWebNovelTotalChapters(document))
+    }
+
+    @Test
+    fun extractsArticleIdFromCoverImageFilename() {
+        assertEquals(
+            "2572",
+            extractFreeWebNovelImageArticleId("https://freewebnovel.com/uploads/2572s.jpg"),
+        )
+        assertEquals(
+            "31415",
+            extractFreeWebNovelImageArticleId("https://freewebnovel.com/uploads/31415s.webp"),
+        )
+    }
+
 }
