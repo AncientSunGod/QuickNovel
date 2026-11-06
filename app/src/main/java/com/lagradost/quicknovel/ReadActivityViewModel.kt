@@ -1030,13 +1030,23 @@ class ReadActivityViewModel : ViewModel() {
         val cleaned = rules.filter { it.find.isNotBlank() }
         setKey(TEXT_REPLACEMENTS_KEY, cleaned)
 
-        // Rebuild the reader from its cached chapter data. reloadChapter() forces
-        // a provider/network reload, which can make a saved text rule appear not to
-        // work when the source is slow, offline, or rejects the repeated request.
-        // refreshChapters() clears rendered chapter state but asks the book cache
-        // for the already downloaded chapter text again.
-        if (::book.isInitialized && currentIndex >= 0) {
-            refreshChapters()
+        // Re-render the chapter currently on screen from the cached book text.
+        // Wait for an in-flight chapter load to finish first: loadIndividualChapter()
+        // deliberately ignores duplicate requests while an index is marked as loading.
+        val targetIndex = desiredIndex?.index ?: currentIndex
+        if (::book.isInitialized && targetIndex >= 0) {
+            ioSafe {
+                while (chapterMutex.withLock { loading.contains(targetIndex) }) {
+                    delay(40)
+                }
+                loadIndividualChapter(
+                    targetIndex,
+                    reload = false,
+                    notify = true,
+                    reTranslate = true,
+                )
+                updateReadArea(seekToDesired = false)
+            }
         }
     }
 
