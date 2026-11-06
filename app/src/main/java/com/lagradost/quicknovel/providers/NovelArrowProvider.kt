@@ -211,23 +211,33 @@ class NovelArrowProvider : MainAPI() {
     }
 
     private suspend fun getHtmlChapterFallback(info: JSONObject): List<ChapterData> {
-        val slug = info.firstNonBlank("novel_slug", "slug", "url_slug") ?: return emptyList()
-        val bookUrl = "$mainUrl/book/$slug"
-        val document = app.get(bookUrl).document
-        val linkedChapters = document.select(
+        val slugOrUrl = info.firstNonBlank(
+            "novel_slug", "slug", "url_slug", "novel_url", "novel_link", "permalink"
+        )
+        val document = slugOrUrl?.let { candidate ->
+            val bookUrl = when {
+                candidate.startsWith("http") -> candidate
+                candidate.startsWith("/") -> "$mainUrl$candidate"
+                else -> "$mainUrl/book/$candidate"
+            }
+            runCatching { app.get(bookUrl).document }.getOrNull()
+        }
+        val linkedChapters = document?.select(
             "#chapter-list a, #chapterList a, .chapter-list a, .chapter-list-content a, a[href*='chapter-']"
-        ).mapNotNull { link ->
+        )?.mapNotNull { link ->
             val href = link.attr("href").takeIf { it.isNotBlank() } ?: return@mapNotNull null
             val chapterUrl = if (href.startsWith("http")) href else "$mainUrl${if (href.startsWith("/")) "" else "/"}$href"
             val title = link.text().trim().ifBlank { link.attr("title").trim() }
             if (title.isBlank()) return@mapNotNull null
             newChapterData(title, chapterUrl)
-        }.distinctBy { it.url }
+        }?.distinctBy { it.url }.orEmpty()
 
         if (linkedChapters.isNotEmpty()) return linkedChapters
-        val firstChapterUrl = document.selectFirst("meta[property=og:novel:read_url]")
+        val firstChapterUrl = document?.selectFirst("meta[property=og:novel:read_url]")
             ?.attr("content")
             ?.takeIf { it.startsWith("http") }
+            ?: info.firstNonBlank("first_chapter_url", "firstChapterUrl", "read_url")
+                ?.takeIf { it.startsWith("http") }
             ?: return emptyList()
         return listOf(newChapterData("Chapter 1", firstChapterUrl))
     }
