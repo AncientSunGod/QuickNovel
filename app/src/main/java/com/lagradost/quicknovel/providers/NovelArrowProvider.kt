@@ -278,6 +278,13 @@ class NovelArrowProvider : MainAPI() {
 
         val title = info.stringOrNull("novel_name")
             ?: throw ErrorLoadingException("NovelArrow title was not found")
+        val restrictedGenres = setOf("adult", "ecchi", "smut", "mature")
+        val genres = info.optJSONArray("novel_genres")
+        if (genres != null && (0 until genres.length()).any { index ->
+                genres.optString(index).trim().lowercase() in restrictedGenres
+            }) {
+            throw ErrorLoadingException("This title is not available in the reader.")
+        }
         val chapters = getChapters(novelId).ifEmpty {
             runCatching { getHtmlChapterFallback(info) }.getOrDefault(emptyList())
         }
