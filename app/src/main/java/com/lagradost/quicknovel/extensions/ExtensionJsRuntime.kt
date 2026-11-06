@@ -529,9 +529,9 @@ object ExtensionJsRuntime {
                               String(Math.floor(Math.random() * 10000000000000000));
                             var parts = init.body._entries.map(function(entry) {
                               var fieldName = String(entry[0]).replace(/"/g, '%22');
-                              return '--' + boundary + '\\r\\n' +
+                              return '--' + boundary + '\r\n' +
                                 'Content-Disposition: form-data; name="' + fieldName + '"\\r\\n\\r\\n' +
-                                String(entry[1]) + '\\r\\n';
+                                String(entry[1]) + '\r\n';
                             });
                             request.body = parts.join('') + '--' + boundary + '--\\r\\n';
                             var hasContentType = Object.keys(request.headers).some(function(key) {
