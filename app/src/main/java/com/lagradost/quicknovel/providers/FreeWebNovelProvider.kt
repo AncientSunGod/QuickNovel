@@ -50,7 +50,7 @@ internal fun parseFreeWebNovelTocLinks(document: Document): List<ChapterData> =
             ?: return@mapNotNull null
         val title = link.attr("title").trim().ifBlank { link.text().trim() }
         if (title.isBlank()) return@mapNotNull null
-        newChapterData(title, href)
+        ChapterData(name = title, url = href, dateOfRelease = null)
     }.distinctBy { it.url }
 
 /** Resolve the article identifier used by the current chapterlist.php endpoint. */
