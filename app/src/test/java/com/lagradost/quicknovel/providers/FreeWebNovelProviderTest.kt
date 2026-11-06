@@ -122,4 +122,24 @@ class FreeWebNovelProviderTest {
         )
     }
 
+
+    @Test
+    fun prefersDisqusIdentifierForArchiveAcode() {
+        val document = Jsoup.parse(
+            """<span class="disqus" data-disqus-identifier="novel-article-2572"></span>"""
+        )
+
+        assertEquals(
+            "novel-article-2572",
+            extractFreeWebNovelAcode(document, "url-slug"),
+        )
+    }
+
+    @Test
+    fun fallsBackToNovelSlugWhenDisqusIdentifierIsMissing() {
+        val document = Jsoup.parse("<html><body></body></html>")
+
+        assertEquals("sample-novel", extractFreeWebNovelAcode(document, "sample-novel"))
+    }
+
 }
