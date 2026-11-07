@@ -213,6 +213,39 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun exposesHtmlparser2VoidElementCheckUsedByNovelPingAndFreeWebNovel() {
+        val (extension, file) = extension(
+            "var Parser = require('htmlparser2').Parser; " +
+                "module.exports = { searchNovels: function() { " +
+                "var parser = new Parser({}); " +
+                "return [{br:parser.isVoidElement('br'),img:parser.isVoidElement('IMG')," +
+                "input:parser.isVoidElement('input'),div:parser.isVoidElement('div')}]; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("""[{"br":true,"img":true,"input":true,"div":false}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun parsesChapterHtmlBeyondLegacyTwoMegabyteParserOutputLimit() {
+        val (extension, file) = extension(
+            "var cheerio = require('cheerio'); " +
+                "module.exports = { searchNovels: function() { " +
+                "var html = '<div>' + new Array(2500001).join('x') + '</div>'; " +
+                "var $ = cheerio.load(html); return [{length:$('div').text().length}]; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            assertEquals("""[{"length":2500000}]""", result.json)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun supportsCommonCheerioLoadSelectTextAndAttributeCalls() {
         val (extension, file) = extension(
             "var cheerio = require('cheerio'); " +
