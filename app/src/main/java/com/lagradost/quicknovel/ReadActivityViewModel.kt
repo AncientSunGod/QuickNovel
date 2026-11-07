@@ -893,9 +893,13 @@ class ReadActivityViewModel : ViewModel() {
             if (notify) notifyChapterUpdate(index)
         }
 
-        // we check for out of bounds and if it is out of bounds then try to expand it (Reddit next)
-        // we lock it here to prevent duplicate loading when init
-        chapterExpandMutex.withLock {
+        // Keep expansion, download, parsing, and rendering under one cleanup boundary.
+        // Cancellation while waiting for the expansion mutex must not leave this chapter
+        // permanently marked as loading.
+        try {
+            // we check for out of bounds and if it is out of bounds then try to expand it (Reddit next)
+            // we lock it here to prevent duplicate loading when init
+            chapterExpandMutex.withLock {
             val preSize = book.size()
             while (index >= book.size()) {
                 // will only expand once per session per chapter
@@ -925,8 +929,6 @@ class ReadActivityViewModel : ViewModel() {
                 } else {
                     chapterData[index] = null
                 }
-                loading -= index
-                if (notify) notifyChapterUpdate(index)
             }
             return
         }
@@ -938,7 +940,6 @@ class ReadActivityViewModel : ViewModel() {
         }
 
         // load the data and precalculate everything needed
-        try {
             val data = safeApiCall {
                 book.getChapterData(index, reload)
             }.map { text ->
@@ -1017,7 +1018,12 @@ class ReadActivityViewModel : ViewModel() {
                 chapterData[index] = data
             }
         } catch (t: Throwable) {
-            if (t is kotlinx.coroutines.CancellationException) throw t
+            if (t is kotlinx.coroutines.CancellationException) {
+                // A cancelled request must be retryable; leaving Resource.Loading cached
+                // makes later navigation think the chapter is already loaded.
+                chapterMutex.withLock { chapterData[index] = null }
+                throw t
+            }
             // Keep the original exception: a chapter/provider failure should be diagnosable
             // instead of silently becoming an unexplained empty reader.
             context?.let { CrashLog.recordNonFatal(it, "Reader chapter load", t) }
