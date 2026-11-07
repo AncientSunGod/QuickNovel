@@ -26,11 +26,11 @@ internal fun shouldAttemptCloudflareRecovery(
     cfRayHeader: String?,
     cfMitigatedHeader: String?,
 ): Boolean {
+    if (cfMitigatedHeader?.equals("challenge", ignoreCase = true) == true) return true
     if (statusCode == 403 || statusCode == 520) return true
     if (statusCode != 503) return false
     return serverHeader?.contains("cloudflare", ignoreCase = true) == true ||
-        !cfRayHeader.isNullOrBlank() ||
-        cfMitigatedHeader?.equals("challenge", ignoreCase = true) == true
+        !cfRayHeader.isNullOrBlank()
 }
 
 /**
