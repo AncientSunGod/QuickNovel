@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
           if-no-files-found: error
       - name: Run focused QuickStream reader smoke test on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
-        timeout-minutes: 15
+        timeout-minutes: 25
         with:
           api-level: 34
           arch: x86_64
@@ -49,8 +49,32 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: |
-            timeout 180s sh -c 'until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\\r")" = "1" ]; do sleep 2; done'
+            mkdir -p reader-smoke-diagnostics
+            set +e
+            timeout 300s sh -c 'until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\\r")" = "1" ]; do sleep 2; done'
+            boot_status=$?
+            adb devices -l > reader-smoke-diagnostics/adb-devices.txt 2>&1
+            adb shell getprop > reader-smoke-diagnostics/device-properties.txt 2>&1
             adb shell settings put global animator_duration_scale 0
             adb shell settings put global transition_animation_scale 0
             adb shell settings put global window_animation_scale 0
-            timeout --kill-after=30s 10m ./gradlew --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.lagradost.quicknovel.ReaderActivitySmokeTest :app:connectedDebugAndroidTest
+            if [ "$boot_status" -ne 0 ]; then
+              echo "Emulator did not finish booting within 5 minutes" > reader-smoke-diagnostics/result.txt
+              adb logcat -d -v time > reader-smoke-diagnostics/logcat.txt 2>&1
+              exit "$boot_status"
+            fi
+            timeout --kill-after=30s 15m ./gradlew --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.lagradost.quicknovel.ReaderActivitySmokeTest :app:connectedDebugAndroidTest
+            test_status=$?
+            echo "connectedDebugAndroidTest exit code: $test_status" > reader-smoke-diagnostics/result.txt
+            adb logcat -d -v time > reader-smoke-diagnostics/logcat.txt 2>&1
+            mkdir -p reader-smoke-diagnostics/test-results
+            cp -R app/build/outputs/androidTest-results/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true
+            cp -R app/build/reports/androidTests/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true
+            exit "$test_status"
+      - name: Upload reader smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickNovel-reader-smoke-diagnostics
+          path: reader-smoke-diagnostics/
+          if-no-files-found: warn
