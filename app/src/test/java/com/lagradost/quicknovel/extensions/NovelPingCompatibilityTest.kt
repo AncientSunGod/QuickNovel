@@ -54,6 +54,13 @@ class NovelPingCompatibilityTest {
                                 """<a href="/novel/sample-novel/chapter-1" title="Chapter One">Chapter One</a><a href="/novel/sample-novel/chapter-2" title="Chapter Two">Chapter Two</a>""",
                             )
                         }
+                        url == "https://novelping.com/novel/sample-novel/chapter-1" -> {
+                            assertEquals("GET", method)
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "text/html",
+                                """<div class="txt"><p>NovelPing chapter body opens</p></div>""",
+                            )
+                        }
                         else -> throw AssertionError("Unexpected NovelPing request: $method $url")
                     }
                 },
@@ -65,6 +72,8 @@ class NovelPingCompatibilityTest {
             assertEquals(2, novel?.data?.size)
             assertEquals("Chapter One", novel?.data?.firstOrNull()?.name)
             assertTrue(novel?.data?.firstOrNull()?.url.orEmpty().contains("#qn_ext_path="))
+            val chapterHtml = runBlocking { api.loadHtml(novel!!.data.first().url) }
+            assertTrue(chapterHtml.orEmpty().contains("NovelPing chapter body opens"))
         } finally {
             bundle.delete()
         }
