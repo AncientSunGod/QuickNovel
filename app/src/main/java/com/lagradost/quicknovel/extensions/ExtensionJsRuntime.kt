@@ -1214,8 +1214,9 @@ object ExtensionJsRuntime {
                     });
                   };
                   this.Headers = QNHeaders;
+                  var qnFetchModule = this.require('@libs/fetch');
                   this.fetch = function(url, init) {
-                    return this.require('@libs/fetch').fetchApi(url, init);
+                    return qnFetchModule.fetchApi(url, init);
                   };
                 }).call(this);
             """.trimIndent()
