@@ -1165,6 +1165,58 @@ object ExtensionJsRuntime {
                     };
                     throw new Error("Unsupported LNReader module import: " + name);
                   };
+
+                  // LNReader plugins commonly use the browser Fetch API directly
+                  // and construct request headers with new Headers(). Rhino has
+                  // neither global, so route both through the same bounded bridge.
+                  function QNHeaders(init) {
+                    this._entries = {};
+                    if (!init) return;
+                    var self = this;
+                    if (init instanceof QNHeaders) {
+                      Object.keys(init._entries).forEach(function(key) {
+                        var entry = init._entries[key];
+                        self._entries[key] = [entry[0], entry[1]];
+                      });
+                    } else if (Array.isArray(init)) {
+                      init.forEach(function(entry) {
+                        if (Array.isArray(entry) && entry.length >= 2) self.append(entry[0], entry[1]);
+                      });
+                    } else {
+                      Object.keys(init).forEach(function(key) { self.append(key, init[key]); });
+                    }
+                  }
+                  QNHeaders.prototype.append = function(name, value) {
+                    var key = String(name).toLowerCase();
+                    var entry = this._entries[key];
+                    this._entries[key] = entry
+                      ? [entry[0], entry[1] + ', ' + String(value)]
+                      : [String(name), String(value)];
+                  };
+                  QNHeaders.prototype.set = function(name, value) {
+                    this._entries[String(name).toLowerCase()] = [String(name), String(value)];
+                  };
+                  QNHeaders.prototype.get = function(name) {
+                    var entry = this._entries[String(name).toLowerCase()];
+                    return entry ? entry[1] : null;
+                  };
+                  QNHeaders.prototype.has = function(name) {
+                    return Object.prototype.hasOwnProperty.call(this._entries, String(name).toLowerCase());
+                  };
+                  QNHeaders.prototype.delete = function(name) {
+                    delete this._entries[String(name).toLowerCase()];
+                  };
+                  QNHeaders.prototype.forEach = function(callback, thisArg) {
+                    var self = this;
+                    Object.keys(this._entries).forEach(function(key) {
+                      var entry = self._entries[key];
+                      callback.call(thisArg, entry[1], entry[0], self);
+                    });
+                  };
+                  this.Headers = QNHeaders;
+                  this.fetch = function(url, init) {
+                    return this.require('@libs/fetch').fetchApi(url, init);
+                  };
                 }).call(this);
             """.trimIndent()
             cx.evaluateString(scope, compatibilityBootstrap, "qn-compatibility.js", 1, null)
