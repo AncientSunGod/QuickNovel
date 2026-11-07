@@ -446,13 +446,18 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
         }
 
         val chapterCount = viewModel.book.size()
+        if (chapterCount <= 0) return
         val viewportTop = getTopY()
         // Use the first text line crossing the reading viewport. Adapter positions are
         // unstable because the reader keeps a moving window of chapters and paragraph
         // rows have very different heights. Character offsets remain tied to the chapter.
         val visibleLine = getAllLines().firstOrNull { it.bottom > viewportTop }
-        val chapterIndex = (visibleLine?.index ?: viewModel.currentIndex)
-            .coerceIn(0, (chapterCount - 1).coerceAtLeast(0))
+            ?: return
+        // During a chapter transition the viewport can temporarily contain only a
+        // separator/loading row. Those rows have no TextVisualLine. Do not substitute
+        // currentIndex + character 0 here: that makes the whole-book bar teleport back
+        // to the start of a chapter while RecyclerView is swapping its visible rows.
+        val chapterIndex = visibleLine.index.coerceIn(0, chapterCount - 1)
 
         // TextSpan.start/end are offsets in the complete rendered chapter, not offsets
         // within an adapter row. The maximum end therefore gives a stable chapter length.
@@ -463,18 +468,14 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
             .maxOfOrNull { it.end }
             ?: 0
 
-        val chapterPosition = if (visibleLine != null && visibleLine.index == chapterIndex) {
-            val lineHeight = (visibleLine.bottom - visibleLine.top).coerceAtLeast(1)
-            val fractionThroughLine = (
-                (viewportTop - visibleLine.top).toFloat() / lineHeight.toFloat()
-            ).coerceIn(0f, 1f)
-            visibleLine.startChar + (
-                (visibleLine.endChar - visibleLine.startChar).coerceAtLeast(0) *
-                    fractionThroughLine
-                ).roundToInt()
-        } else {
-            0
-        }
+        val lineHeight = (visibleLine.bottom - visibleLine.top).coerceAtLeast(1)
+        val fractionThroughLine = (
+            (viewportTop - visibleLine.top).toFloat() / lineHeight.toFloat()
+        ).coerceIn(0f, 1f)
+        val chapterPosition = visibleLine.startChar + (
+            (visibleLine.endChar - visibleLine.startChar).coerceAtLeast(0) *
+                fractionThroughLine
+            ).roundToInt()
 
         binding.readOverflowProgress.progress = calculateReaderProgress(
             chapterIndex = chapterIndex,
