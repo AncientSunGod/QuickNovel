@@ -1372,8 +1372,8 @@ object ExtensionJsRuntime {
             }
             walk(document, 0)
             val result = events.toString()
-            require(result.toByteArray(Charsets.UTF_8).size <= 2 * 1024 * 1024) {
-                "HTML parser output exceeds the 2 MB limit."
+            require(result.toByteArray(Charsets.UTF_8).size <= MAX_RESULT_BYTES) {
+                "HTML parser output exceeds the 8 MB limit."
             }
             return result
         }
