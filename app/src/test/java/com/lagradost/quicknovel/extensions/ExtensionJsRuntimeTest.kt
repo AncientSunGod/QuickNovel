@@ -219,11 +219,12 @@ class ExtensionJsRuntimeTest {
                 "module.exports = { searchNovels: function() { " +
                 "var parser = new Parser({}); " +
                 "return [{br:parser.isVoidElement('br'),img:parser.isVoidElement('IMG')," +
-                "input:parser.isVoidElement('input'),div:parser.isVoidElement('div')}]; } };"
+                "input:parser.isVoidElement('input'),keygen:parser.isVoidElement('keygen')," +
+                "basefont:parser.isVoidElement('basefont'),div:parser.isVoidElement('div')}]; } };"
         )
         try {
             val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
-            assertEquals("""[{"br":true,"img":true,"input":true,"div":false}]""", result.json)
+            assertEquals("""[{"br":true,"img":true,"input":true,"keygen":true,"basefont":true,"div":false}]""", result.json)
         } finally {
             file.delete()
         }
