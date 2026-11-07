@@ -107,6 +107,41 @@ class ExtensionJsRuntimeTest {
     }
 
     @Test
+    fun supportsBrowserFetchAndHeadersGlobalsForLnReaderPlugins() {
+        val (extension, file) = extension(
+            "module.exports = { searchNovels: function() { " +
+                "var headers = new Headers({'X-Token':'first'}); headers.append('X-Token','second'); " +
+                "return fetch('https://example.com/api', {method:'POST',headers:headers,body:'payload'})" +
+                ".then(function(response) { return response.text().then(function(body) { " +
+                "return [{ok:response.ok,status:response.status,token:response.headers.get('x-reply')," +
+                "body:body,requestToken:headers.get('X-TOKEN')}]; }); }); } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension,
+                "searchNovels",
+                "[]",
+                testRequestOverride = { url, method, headers, body ->
+                    assertEquals("https://example.com/api", url)
+                    assertEquals("POST", method)
+                    assertEquals("first, second", headers["X-Token"])
+                    assertEquals("payload", body)
+                    ExtensionHttpClient.TextResponse(
+                        url, 200, "text/plain", "fetch bridge works",
+                        headers = mapOf("x-reply" to "ok"),
+                    )
+                },
+            ).getOrThrow()
+            assertEquals(
+                """[{"ok":true,"status":200,"token":"ok","body":"fetch bridge works","requestToken":"first, second"}]""",
+                result.json,
+            )
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun supportsAsyncStyleBundleAndKnownLnReaderModules() {
         val (extension, file) = extension(
             "var cover = require('@libs/defaultCover'); " +
