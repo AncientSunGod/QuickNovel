@@ -887,13 +887,16 @@ class ReadActivity2 : AppCompatActivity(), ColorPickerDialogListener {
         binding = ReadMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // The reader draws edge-to-edge. Keep the book progress strip above the
-        // system navigation area instead of letting the gesture/navigation bar cover it.
+        // Keep the whole-book progress strip at the top edge of the immersive reader.
+        // Respect only a physical display cutout; the system status bar itself is hidden
+        // while reading, so reserving its inset would push the strip away from the top.
         ViewCompat.setOnApplyWindowInsetsListener(binding.readOverflowProgress) { view, insets ->
-            val navigationInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val cutoutInset = insets.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.displayCutout()
+            ).top
             val params = view.layoutParams as? FrameLayout.LayoutParams
-            if (params != null && params.bottomMargin != navigationInset) {
-                params.bottomMargin = navigationInset
+            if (params != null && params.topMargin != cutoutInset) {
+                params.topMargin = cutoutInset
                 view.layoutParams = params
             }
             insets
