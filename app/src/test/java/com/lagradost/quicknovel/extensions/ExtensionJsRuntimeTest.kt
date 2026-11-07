@@ -271,7 +271,7 @@ class ExtensionJsRuntimeTest {
             "var cheerio = require('cheerio'); " +
                 "module.exports = { searchNovels: function() { " +
                 "var html = '<main>'; for (var i=0;i<25;i++) { html += '<div>' + new Array(100001).join('x') + '</div>'; } html += '</main>'; " +
-                "var $ = cheerio.load(html); var length = 0; $('div').each(function(i, el) { length += $(el).text().length; }); return [{length:length}]; } };
+                "var $ = cheerio.load(html); var length = 0; $('div').each(function(i, el) { length += $(el).text().length; }); return [{length:length}]; } };"
         )
         try {
             val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
