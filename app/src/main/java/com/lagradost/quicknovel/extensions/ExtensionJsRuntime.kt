@@ -58,7 +58,7 @@ object ExtensionJsRuntime {
 
     private const val MAX_SOURCE_BYTES = 8 * 1024 * 1024
     private const val MAX_ARGUMENT_BYTES = 256 * 1024
-    private const val MAX_RESULT_BYTES = 2 * 1024 * 1024
+    private const val MAX_RESULT_BYTES = 8 * 1024 * 1024
     // Timers in published LNReader bundles are used for retry backoff and cooperative yields.
     // The bridge executes synchronously, so callbacks run inline after a bounded delay.
     private const val MAX_TIMER_DELAY_MS = 10_000L
@@ -148,7 +148,10 @@ object ExtensionJsRuntime {
                     args: Array<out Any>,
                 ): Any {
                     fetchCount += 1
-                    require(fetchCount <= 20) { "Extension exceeded the 20-request operation limit." }
+                    val requestLimit = if (operation == "parseNovel") 80 else 20
+                    require(fetchCount <= requestLimit) {
+                        "Extension exceeded the $requestLimit-request operation limit during $operation."
+                    }
                     val requestedUrl = args.firstOrNull()?.toString().orEmpty()
                     require(requestedUrl.isNotBlank()) { "Extension fetch URL is missing." }
                     val init = runCatching {
