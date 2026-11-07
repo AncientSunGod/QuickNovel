@@ -910,6 +910,7 @@ class ReadActivityViewModel : ViewModel() {
                     // we assume that the text is cached
                     book.expand(book.getChapterData(book.size() - 1, reload = false))
                 } catch (t: Throwable) {
+                    if (t is kotlinx.coroutines.CancellationException) throw t
                     logError(t)
                 }
             }
