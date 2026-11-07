@@ -3,7 +3,7 @@ name: Android debug APK
 on:
   workflow_dispatch:
   push:
-    branches: [master, fix/lnreader-extension-compatibility, integration/lnreader-progress-merge]
+    branches: [master, fix/lnreader-extension-compatibility]
   pull_request:
     branches: [master]
 
