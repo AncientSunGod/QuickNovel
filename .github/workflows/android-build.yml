@@ -3,21 +3,22 @@ name: Android debug APK
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [master, fix/lnreader-extension-compatibility, integration/lnreader-progress-merge]
   pull_request:
     branches: [master]
 
 permissions:
   contents: read
 
+# Share one run between a branch push and its matching pull_request event.
 concurrency:
-  group: quicknovel-android-build
+  group: quicknovel-android-build-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -29,10 +30,51 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
       - name: Run unit tests and build debug APK
-        run:  ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: QuickNovel-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+      - name: Run focused QuickStream reader smoke test on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        timeout-minutes: 25
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: |
+            set +e
+            mkdir -p reader-smoke-diagnostics/test-results
+            adb devices -l > reader-smoke-diagnostics/adb-devices.txt 2>&1
+            adb shell getprop > reader-smoke-diagnostics/device-properties.txt 2>&1
+            adb logcat -c
+
+            # Always preserve the failure evidence, including when the Gradle
+            # instrumentation process times out or is interrupted.
+            capture_reader_diagnostics() {
+              status=$?
+              echo "connectedDebugAndroidTest exit code: $status" > reader-smoke-diagnostics/result.txt
+              adb logcat -d -v threadtime > reader-smoke-diagnostics/logcat.txt 2>&1
+              adb shell dumpsys activity activities > reader-smoke-diagnostics/activities.txt 2>&1
+              adb shell dumpsys window windows > reader-smoke-diagnostics/windows.txt 2>&1
+              adb shell ps -A > reader-smoke-diagnostics/processes.txt 2>&1
+              cp -R app/build/outputs/androidTest-results/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true
+              cp -R app/build/reports/androidTests/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true
+              exit "$status"
+            }
+            trap capture_reader_diagnostics EXIT
+
+            timeout --signal=TERM --kill-after=30s 12m ./gradlew --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.lagradost.quicknovel.ReaderActivitySmokeTest :app:connectedDebugAndroidTest
+            exit "$?"
+      - name: Upload reader smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickNovel-reader-smoke-diagnostics
+          path: reader-smoke-diagnostics/
+          if-no-files-found: warn

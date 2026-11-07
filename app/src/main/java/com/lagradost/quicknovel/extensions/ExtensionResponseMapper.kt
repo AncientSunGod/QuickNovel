@@ -7,6 +7,7 @@ import com.lagradost.quicknovel.setStatus
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
+import kotlin.math.roundToInt
 
 /**
  * Converts LNReader-style JSON results into QuickNovel's native response models.
@@ -28,6 +29,7 @@ object ExtensionResponseMapper {
         json: String,
         apiName: String,
         baseUrl: String,
+        posterHeaders: Map<String, String>? = null,
     ): List<SearchResponse> {
         val array = JSONArray(json)
         require(array.length() <= MAX_SEARCH_RESULTS) {
@@ -53,6 +55,7 @@ object ExtensionResponseMapper {
                             ?.let { resolveHttpUrl(baseUrl, it) },
                         latestChapter = item.safeText("latestChapter").takeIf { it.isNotBlank() },
                         apiName = apiName,
+                        posterHeaders = posterHeaders,
                     )
                 )
             }
@@ -64,6 +67,7 @@ object ExtensionResponseMapper {
         apiName: String,
         baseUrl: String,
         requestedUrl: String,
+        posterHeaders: Map<String, String>? = null,
     ): StreamResponse {
         val item = JSONObject(json)
         val title = item.safeText("title").ifBlank { item.safeText("name") }
@@ -75,6 +79,10 @@ object ExtensionResponseMapper {
             ?: throw IllegalArgumentException("Extension returned an invalid novel URL.")
 
         val chaptersJson = item.optJSONArray("chapters")
+            ?: item.optJSONArray("chapterList")
+            ?: item.optJSONArray("chapter_list")
+            ?: item.optJSONObject("data")?.optJSONArray("chapters")
+            ?: item.optJSONObject("novel")?.optJSONArray("chapters")
             ?: throw IllegalArgumentException("Extension response is missing its chapter list.")
         require(chaptersJson.length() <= MAX_CHAPTERS) {
             "Extension returned too many chapters."
@@ -83,13 +91,16 @@ object ExtensionResponseMapper {
         val chapters = buildList {
             for (index in 0 until chaptersJson.length()) {
                 val chapter = chaptersJson.optJSONObject(index) ?: continue
-                val chapterTitle = chapter.safeText("title").ifBlank {
-                    chapter.safeText("name")
-                }
-                val chapterUrl = resolveHttpUrl(
-                    baseUrl,
-                    chapter.safeText("url").ifBlank { chapter.safeText("path") },
-                ) ?: continue
+                val chapterTitle = chapter.safeText("title")
+                    .ifBlank { chapter.safeText("name") }
+                    .ifBlank { chapter.safeText("chapterTitle") }
+                    .ifBlank { chapter.safeText("chapter_name") }
+                val chapterPath = chapter.safeText("url")
+                    .ifBlank { chapter.safeText("path") }
+                    .ifBlank { chapter.safeText("chapterUrl") }
+                    .ifBlank { chapter.safeText("chapter_url") }
+                    .ifBlank { chapter.safeText("link") }
+                val chapterUrl = resolveHttpUrl(baseUrl, chapterPath) ?: continue
                 if (chapterTitle.isBlank()) continue
                 add(
                     ChapterData(
@@ -97,6 +108,8 @@ object ExtensionResponseMapper {
                         url = chapterUrl,
                         dateOfRelease = chapter.safeText("dateOfRelease")
                             .ifBlank { chapter.safeText("releaseTime") }
+                            .ifBlank { chapter.safeText("date") }
+                            .ifBlank { chapter.safeText("updatedAt") }
                             .takeIf { it.isNotBlank() },
                     )
                 )
@@ -114,6 +127,10 @@ object ExtensionResponseMapper {
                 .ifBlank { item.safeText("cover") }
                 .takeIf { it.isNotBlank() }
                 ?.let { resolveHttpUrl(baseUrl, it) },
+            rating = item.optDouble("rating", Double.NaN)
+                .takeIf { it.isFinite() && it >= 0.0 }
+                ?.let { (it.coerceAtMost(5.0) * 200.0).roundToInt().coerceIn(0, 1000) },
+            posterHeaders = posterHeaders,
             synopsis = item.safeText("synopsis")
                 .ifBlank { item.safeText("summary") }
                 .takeIf { it.isNotBlank() },

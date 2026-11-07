@@ -25,6 +25,11 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>(
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshApis()
+    }
+
     override fun onBindingCreated(binding: FragmentHomeBinding) {
         val browseAdapter = BrowseAdapter()
         binding.homeBrowselist.apply {

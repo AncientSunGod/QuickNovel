@@ -17,7 +17,6 @@ import com.lagradost.quicknovel.BaseApplication.Companion.getKey
 import com.lagradost.quicknovel.BaseApplication.Companion.setKey
 import com.lagradost.quicknovel.BookDownloader2
 import com.lagradost.quicknovel.BookDownloader2.openQuickStream
-import com.lagradost.quicknovel.BookDownloader2Helper.createQuickStream
 import com.lagradost.quicknovel.ChapterData
 import com.lagradost.quicknovel.CommonActivity.activity
 import com.lagradost.quicknovel.DownloadActionType
@@ -88,6 +87,7 @@ sealed class ResultPageAction {
     data class SetBookmark(val type: ReadType) : ResultPageAction()
     object OpenBookmark : ResultPageAction()
     object DismissDialog : ResultPageAction()
+    object Retry : ResultPageAction()
     object ExpandReviews : ResultPageAction()
     data class ResultAction(val action: SearchResponseAction) : ResultPageAction()
     data class ChapterAction(
@@ -167,34 +167,7 @@ class ResultViewModel2(
     }
 
     init {
-        viewModelScope.launch {
-            api.loadResult(url).onFailure { error ->
-                updateState { copy(responseError = error, loadingResponse = false) }
-            }.onSuccess { value ->
-                val id = value.id ?: throw IllegalStateException("loadResult must give an id")
-                val bookmarkState = getBookmarkState(id)
-                updateState {
-                    copy(
-                        response = value,
-                        loadingResponse = false,
-                        responseError = null,
-                        bookmark = bookmarkState,
-                        chapters = newChaptersList(value)
-                    )
-                }
-
-                // Mark as opened
-                ImmutableSearchResponse.setTimeOfPageOpened(id, System.currentTimeMillis())
-                BookDownloader2.openChanged(id)
-
-                // When we open this we can update the cached data in downloads
-                if (bookmarkState != ReadType.NONE) {
-                    setBookmarkData(id, value)
-                    BookDownloader2.bookmarkChanged(id)
-                }
-            }
-        }
-
+        loadNovel()
         BookDownloader2.downloadProgressChanged += this::onDownloadStateChange
         BookDownloader2.downloadRemoved += this::onDownloadRemoved
         BookDownloader2.downloadDataChanged += this::onDownloadAdded
@@ -210,6 +183,33 @@ class ResultViewModel2(
         BookDownloader2.bookmarkChanged -= this::onBookmarkChanged
         BookDownloader2.refreshingChanged -= this::onRefreshingChanged
         BookDownloader2.chapterReadChanged -= this::onChapterChanged
+    }
+
+    private fun loadNovel() {
+        viewModelScope.launch {
+            updateState { copy(loadingResponse = true, responseError = null) }
+            api.loadResult(url).onFailure { error ->
+                updateState { copy(responseError = error, loadingResponse = false) }
+            }.onSuccess { value ->
+                val id = value.id ?: throw IllegalStateException("loadResult must give an id")
+                val bookmarkState = getBookmarkState(id)
+                updateState {
+                    copy(
+                        response = value,
+                        loadingResponse = false,
+                        responseError = null,
+                        bookmark = bookmarkState,
+                        chapters = newChaptersList(value)
+                    )
+                }
+                ImmutableSearchResponse.setTimeOfPageOpened(id, System.currentTimeMillis())
+                BookDownloader2.openChanged(id)
+                if (bookmarkState != ReadType.NONE) {
+                    setBookmarkData(id, value)
+                    BookDownloader2.bookmarkChanged(id)
+                }
+            }
+        }
     }
 
     fun onDownloadStateChange(data: Pair<Int, DownloadProgressState>) = viewModelScope.launch {
@@ -295,6 +295,8 @@ class ResultViewModel2(
                 }
             }
 
+            ResultPageAction.Retry -> loadNovel()
+
             is ResultPageAction.SetBookmark -> {
                 val response = state.value.response
                 val id = response?.id
@@ -376,27 +378,22 @@ class ResultViewModel2(
                 }
 
                 try {
-                    // TODO refactor this to use bookdownloader when we deprecate reviewviewmodel1
-                    val uri =
-                        activity?.createQuickStream(
-                            QuickStreamData(
-                                QuickStreamMetaData(
-                                    action.response.author,
-                                    action.response.name,
-                                    action.response.apiName,
-                                ),
-                                action.response.posterUrl,
-                                chapters.map { chapter ->
-                                    ChapterData(
-                                        name = chapter.name,
-                                        url = chapter.url,
-                                        dateOfRelease = chapter.dateOfRelease,
-                                        views = chapter.views
-                                    )
-                                }.toMutableList()
+                    val quickStream = QuickStreamData(
+                        QuickStreamMetaData(
+                            action.response.author,
+                            action.response.name,
+                            action.response.apiName,
+                        ),
+                        action.response.posterUrl,
+                        chapters.map { chapter ->
+                            ChapterData(
+                                name = chapter.name,
+                                url = chapter.url,
+                                dateOfRelease = chapter.dateOfRelease,
+                                views = chapter.views
                             )
-                        )
-
+                        }.toMutableList()
+                    )
                     ImmutableSearchResponse.addToHistory(response = action.response)
                     setKey(EPUB_CURRENT_POSITION, action.response.name, action.chapter.index)
                     setKey(
@@ -408,7 +405,7 @@ class ResultViewModel2(
                         EPUB_CURRENT_POSITION_SCROLL_CHAR, action.response.name, 0,
                     )
 
-                    openQuickStream(uri)
+                    openQuickStream(quickStream)
                 } catch (t: Throwable) {
                     viewModelScope.launch {
                         postEffect {

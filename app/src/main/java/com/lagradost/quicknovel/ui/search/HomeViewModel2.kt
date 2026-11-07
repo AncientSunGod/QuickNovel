@@ -16,6 +16,7 @@ import com.lagradost.quicknovel.ui.common.SearchResponseAction
 import com.lagradost.quicknovel.ui.mainpage.FilterQuery
 import com.lagradost.quicknovel.ui.search.HomeEffect.NavigateToMainPage
 import com.lagradost.quicknovel.util.Apis
+import com.lagradost.quicknovel.extensions.ExtensionProviderRegistry
 import com.lagradost.quicknovel.util.cmap
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableSet
@@ -54,6 +55,7 @@ data class SearchRow(
 sealed class HomeAction {
     data class Search(val query: String) : HomeAction()
     object ConfigureApis : HomeAction()
+    object RefreshApis : HomeAction()
     object DismissConfigureApis : HomeAction()
     data class Open(val item: MainAPI) : HomeAction()
     data class ConfigureApisNames(val names: ImmutableSet<String>) : HomeAction()
@@ -72,6 +74,14 @@ class HomeViewModel2 : ViewModel(),
     StateContainer<HomeViewModelState> by DefaultStateContainer(HomeViewModelState()),
     ActionHandler<HomeAction>,
     EffectContainer<HomeEffect> by DefaultEffectContainer() {
+
+    init {
+        viewModelScope.launch {
+            ExtensionProviderRegistry.revision.collect {
+                onAction(HomeAction.RefreshApis)
+            }
+        }
+    }
 
     /*companion object {
         // Todo do this with injection of perf instead?
@@ -106,6 +116,22 @@ class HomeViewModel2 : ViewModel(),
 
     override fun onAction(action: HomeAction) {
         when (action) {
+            HomeAction.RefreshApis -> {
+                val allApis = Apis.apis.toImmutableList()
+                val mainPageApis = allApis.filter { api -> api.hasMainPage }.toImmutableList()
+                updateState {
+                    copy(
+                        allApis = allApis,
+                        mainPageApis = mainPageApis,
+                        shownMainPageApis = filterApis(
+                            mainPageApis,
+                            filterNames,
+                            filterLanguages,
+                        ),
+                    )
+                }
+            }
+
             HomeAction.ConfigureApis -> {
                 updateState {
                     copy(isConfigureShow = true)

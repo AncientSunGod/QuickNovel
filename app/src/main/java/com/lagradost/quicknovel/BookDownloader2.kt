@@ -30,6 +30,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.scale
 import androidx.core.net.toUri
@@ -49,7 +50,6 @@ import com.lagradost.quicknovel.BookDownloader2.LOCAL_EPUB
 import com.lagradost.quicknovel.BookDownloader2.LOCAL_EPUB_MIN_SIZE
 import com.lagradost.quicknovel.BookDownloader2Helper.IMPORT_SOURCE
 import com.lagradost.quicknovel.BookDownloader2Helper.IMPORT_SOURCE_PDF
-import com.lagradost.quicknovel.BookDownloader2Helper.createQuickStream
 import com.lagradost.quicknovel.BookDownloader2Helper.generateId
 import com.lagradost.quicknovel.BookDownloader2Helper.getDirectory
 import com.lagradost.quicknovel.BookDownloader2Helper.getGeneralCSStyleForEPUBs
@@ -592,6 +592,38 @@ object BookDownloader2Helper {
         activity.startActivity(myIntent)
     }
 
+    /**
+     * Normal reader launch path: hand the chapter manifest directly to the reader
+     * process instead of serializing it and immediately deserializing it through a URI.
+     * The file URI is retained as a process-death / legacy fallback.
+     */
+    fun openQuickStream(
+        activity: Activity?,
+        data: QuickStreamData,
+        fallbackUri: Uri?,
+    ) {
+        if (activity == null || data.data.isEmpty()) return
+        val sessionId = QuickStreamSessionStore.create(data)
+        val intent = Intent(activity, ReadActivity2::class.java).apply {
+            putExtra(QUICK_STREAM_SESSION_EXTRA, sessionId)
+            if (fallbackUri != null) {
+                setDataAndType(fallbackUri, "quickstream")
+            } else {
+                type = "quickstream"
+            }
+        }
+        try {
+            activity.startActivity(intent)
+        } catch (error: Throwable) {
+            QuickStreamSessionStore.release(sessionId)
+            if (fallbackUri != null) {
+                openQuickStream(activity, fallbackUri)
+            } else {
+                throw error
+            }
+        }
+    }
+
     private fun isScopedStorage(): Boolean {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
     }
@@ -652,11 +684,29 @@ object BookDownloader2Helper {
         forceReload: Boolean
     ): LoadedChapter? {
         val path = getFilePath(meta, index)
-        downloadIndividualChapter(
-            path, getApiFromName(meta.apiName), chapter, forceReload,
-            worker = WaitOrCancel()
-        )
+        val provider = getApiFromNameOrNull(meta.apiName)
+            ?: throw ErrorLoadingException(
+                "The original provider '${meta.apiName}' is no longer installed or available."
+            )
+        when (
+            downloadIndividualChapter(
+                path,
+                provider,
+                chapter,
+                forceReload,
+                worker = WaitOrCancel(),
+            )
+        ) {
+            DownloadResult.Success -> Unit
+            DownloadResult.Cancel -> throw kotlinx.coroutines.CancellationException(
+                "Chapter loading was cancelled."
+            )
+            DownloadResult.Failure -> throw ErrorLoadingException(
+                "Could not load '${chapter.name}' from ${meta.apiName}."
+            )
+        }
         return getChapter(path, index, getStripHtml(), false)
+            ?: throw ErrorLoadingException("The downloaded chapter file is invalid.")
     }
 
     @WorkerThread
@@ -666,18 +716,19 @@ object BookDownloader2Helper {
                 return null
             }
 
-            if (!checkWrite()) {
-                requestRW()
-                if (!checkWrite()) return null
-            }
-            val outputDir: File = this.cacheDir
+            // Stream manifests live in the app's private files directory. They do not
+            // need legacy external-storage permissions. A file:// URI cannot be opened
+            // by ReadActivity2 through ContentResolver; expose it through our
+            // configured FileProvider instead.
             val fileName = getFilePath(data.meta, -1)
-
-            val outputFile = File(outputDir, fileName)
+            val outputFile = File(fileName)
             outputFile.parentFile?.mkdirs()
-            outputFile.createNewFile()
             outputFile.writeText(mapper.writeValueAsString(data))
-            return outputFile.toUri()
+            return FileProvider.getUriForFile(
+                this,
+                "$packageName.provider",
+                outputFile
+            )
         } catch (e: Exception) {
             return null
         }
@@ -1201,6 +1252,10 @@ object BookDownloader2 {
         BookDownloader2Helper.openQuickStream(activity, uri)
     }
 
+    fun openQuickStream(data: QuickStreamData, fallbackUri: Uri? = null) = main {
+        BookDownloader2Helper.openQuickStream(activity, data, fallbackUri)
+    }
+
     private val streamMutex = Mutex()
 
     // TODO refactor to use immutable
@@ -1241,20 +1296,17 @@ object BookDownloader2 {
                 return
             }
 
-            val uri =
-                activity?.createQuickStream(
-                    QuickStreamData(
-                        QuickStreamMetaData(
-                            res.author,
-                            res.name,
-                            apiName,
-                        ),
-                        res.posterUrl,
-                        res.data.toMutableList()
-                    )
-                )
-
-            openQuickStream(uri)
+            val quickStream = QuickStreamData(
+                QuickStreamMetaData(
+                    res.author,
+                    res.name,
+                    apiName,
+                ),
+                res.posterUrl,
+                res.data.toMutableList()
+            )
+            // Pass the chapter manifest directly; do not serialize a second copy.
+            openQuickStream(quickStream)
         }
     }
 

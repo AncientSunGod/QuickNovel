@@ -131,7 +131,7 @@ class MainPageViewModel : ViewModel() {
 
     fun setMainCategory(to: Int) {
         currentMainCategory.postValue(to)
-        load(0, mainCategory = to, orderBy = currentOrderBy.value, tag = currentOrderBy.value)
+        load(0, mainCategory = to, orderBy = currentOrderBy.value, tag = currentTag.value)
     }
 
     fun setTag(to: Int) {
