@@ -680,6 +680,15 @@ object ExtensionJsRuntime {
                           headers.forEach(function(value, key) { normalized[key] = value; });
                           headers = normalized;
                         }
+                        // Browser fetch applies init.referrer as the Referer request header.
+                        // LNReader providers such as WTR-LAB depend on that navigation context.
+                        var hasReferer = Object.keys(headers).some(function(key) {
+                          return key.toLowerCase() === 'referer';
+                        });
+                        if (!hasReferer && init && typeof init.referrer === 'string' &&
+                            /^https?:\\/\\//i.test(init.referrer)) {
+                          headers = Object.assign({}, headers, {Referer:init.referrer});
+                        }
                         var request = {method:method, headers:headers};
                         if (init && init.body != null) {
                           if (typeof init.body === 'string') {
@@ -748,6 +757,13 @@ object ExtensionJsRuntime {
                             var normalized = {};
                             headers.forEach(function(value, key) { normalized[key] = value; });
                             headers = normalized;
+                          }
+                          var hasReferer = Object.keys(headers).some(function(key) {
+                            return key.toLowerCase() === 'referer';
+                          });
+                          if (!hasReferer && init && typeof init.referrer === 'string' &&
+                              /^https?:\\/\\//i.test(init.referrer)) {
+                            headers = Object.assign({}, headers, {Referer:init.referrer});
                           }
                           var request = {method:method,headers:headers};
                           return Promise.resolve(JSON.parse(
@@ -880,8 +896,9 @@ object ExtensionJsRuntime {
                       // method while rebuilding chapter HTML. Keep this list aligned with
                       // HTML's void elements: they have no closing tag and must not emit one.
                       var voidElements = {
-                        area:true, base:true, br:true, col:true, embed:true, hr:true,
-                        img:true, input:true, link:true, meta:true, param:true,
+                        area:true, base:true, basefont:true, bgsound:true, br:true,
+                        col:true, embed:true, hr:true, img:true, input:true,
+                        keygen:true, link:true, meta:true, param:true,
                         source:true, track:true, wbr:true
                       };
                       Parser.prototype.isVoidElement = function(name) {
@@ -1159,7 +1176,7 @@ object ExtensionJsRuntime {
             val output = if (operation == "transformChapterHtml") {
                 val html = arguments.optString(0)
                 require(html.toByteArray(Charsets.UTF_8).size <= MAX_RESULT_BYTES) {
-                    "Custom JavaScript input HTML exceeds the 2 MB limit."
+                    "Custom JavaScript input HTML exceeds the 8 MB limit."
                 }
                 ScriptableObject.putProperty(scope, "__qnTransformHtml", html)
                 cx.evaluateString(
@@ -1276,7 +1293,7 @@ object ExtensionJsRuntime {
             output
         }
         require(output.toByteArray(Charsets.UTF_8).size <= MAX_RESULT_BYTES) {
-            "Extension result exceeds the 2 MB limit."
+            "Extension result exceeds the 8 MB limit."
         }
         // Ensure the operation produced valid JSON before it crosses into app models.
         val parsedResult = org.json.JSONTokener(output).nextValue()
