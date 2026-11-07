@@ -29,18 +29,32 @@ class NovelPingCompatibilityTest {
                 operation = "parseNovel",
                 argumentsJson = """["novel/sample-novel"]""",
                 testRequestOverride = { url, method, headers, body ->
-                    assertEquals("https://novelping.com/novel/sample-novel", url)
-                    assertEquals("GET", method)
-                    ExtensionHttpClient.TextResponse(
-                        url, 200, "text/html",
-                        """
-                        <html><body>
-                          <div class="books"><img src="/cover.jpg" title="Sample Novel"></div>
-                          <div id="indexListPage" data-novel-id="123" data-total-chapters="2"></div>
-                          <span class="disqus" data-disqus-identifier="sample-acode"></span>
-                        </body></html>
-                        """.trimIndent(),
-                    )
+                    when {
+                        url == "https://novelping.com/novel/sample-novel" -> {
+                            assertEquals("GET", method)
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "text/html",
+                                """
+                                <html><body>
+                                  <div class="books"><img src="/cover.jpg" title="Sample Novel"></div>
+                                  <div id="indexListPage" data-novel-id="123" data-total-chapters="2"></div>
+                                  <span class="disqus" data-disqus-identifier="sample-acode"></span>
+                                </body></html>
+                                """.trimIndent(),
+                            )
+                        }
+                        url == "https://novelping.com/ajax/chapter-archive" -> {
+                            assertEquals("POST", method)
+                            assertTrue(headers["Content-Type"].orEmpty().contains("application/x-www-form-urlencoded"))
+                            assertTrue(body.orEmpty().contains("novelId=123"))
+                            assertTrue(body.orEmpty().contains("acode=sample-acode"))
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "text/html",
+                                """<a href="/novel/sample-novel/chapter-1" title="Chapter One">Chapter One</a><a href="/novel/sample-novel/chapter-2" title="Chapter Two">Chapter Two</a>""",
+                            )
+                        }
+                        else -> throw AssertionError("Unexpected NovelPing request: $method $url")
+                    }
                 },
             ).getOrThrow()
             val novel = JSONObject(result.json)
