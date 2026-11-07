@@ -1033,4 +1033,25 @@ class ExtensionJsRuntimeTest {
         }
     }
 
+
+    @Test
+    fun supportsLargeHtmlParser2InputUsedByNovelPingWithinBoundedLimit() {
+        val (extension, file) = extension(
+            "var htmlparser2 = require('htmlparser2'); " +
+                "module.exports = { parseNovel: function() { " +
+                "var largeText = new Array(2 * 1024 * 1024 + 2048).join('x'); " +
+                "var title = ''; " +
+                "var parser = new htmlparser2.Parser({onopentag:function(name){}, ontext:function(text){ if (!title && text.indexOf('Large catalogue') >= 0) title = 'Large catalogue'; }}); " +
+                "parser.write('<h1>Large catalogue</h1><div>' + largeText + '</div>'); " +
+                "parser.end(); " +
+                "return { name: title, chapters: [] }; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "parseNovel", "[]").getOrThrow()
+            assertTrue(result.json.contains("Large catalogue"))
+        } finally {
+            file.delete()
+        }
+    }
+
 }
