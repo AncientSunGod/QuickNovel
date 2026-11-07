@@ -1015,4 +1015,22 @@ class ExtensionJsRuntimeTest {
         }
     }
 
+
+    @Test
+    fun parsesNovelHtmlLargerThanTwoMegabytesWithinBoundedLimit() {
+        val (extension, file) = extension(
+            "var cheerio = require('cheerio'); " +
+                "module.exports = { parseNovel: function() { " +
+                "var largeText = new Array(2 * 1024 * 1024 + 2048).join('x'); " +
+                "var $ = cheerio.load('<html><body><h1>Large catalogue</h1><div>' + largeText + '</div></body></html>'); " +
+                "return { name: $('h1').text(), chapters: [] }; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "parseNovel", "[]").getOrThrow()
+            assertTrue(result.json.contains("Large catalogue"))
+        } finally {
+            file.delete()
+        }
+    }
+
 }
