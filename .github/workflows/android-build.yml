@@ -39,15 +39,28 @@ jobs:
           if-no-files-found: error
       - name: Run focused QuickStream reader smoke test on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
-        timeout-minutes: 25
+        timeout-minutes: 15
         with:
           api-level: 34
           arch: x86_64
           profile: pixel_2
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          emulator-boot-timeout: 600
           disable-animations: true
           script: |
-            bash -c 'mkdir -p reader-smoke-diagnostics; adb devices -l > reader-smoke-diagnostics/adb-devices.txt 2>&1; adb shell getprop > reader-smoke-diagnostics/device-properties.txt 2>&1; adb logcat -c; timeout --kill-after=30s 15m ./gradlew --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.lagradost.quicknovel.ReaderActivitySmokeTest :app:connectedDebugAndroidTest; test_status=$?; echo "connectedDebugAndroidTest exit code: $test_status" > reader-smoke-diagnostics/result.txt; adb logcat -d -v time > reader-smoke-diagnostics/logcat.txt 2>&1; mkdir -p reader-smoke-diagnostics/test-results; cp -R app/build/outputs/androidTest-results/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true; cp -R app/build/reports/androidTests/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true; exit "$test_status"'
+            set +e
+            mkdir -p reader-smoke-diagnostics
+            adb devices -l > reader-smoke-diagnostics/adb-devices.txt 2>&1
+            adb shell getprop > reader-smoke-diagnostics/device-properties.txt 2>&1
+            adb logcat -c
+            timeout --signal=TERM --kill-after=20s 8m ./gradlew --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.lagradost.quicknovel.ReaderActivitySmokeTest :app:connectedDebugAndroidTest
+            test_status=$?
+            echo "connectedDebugAndroidTest exit code: $test_status" > reader-smoke-diagnostics/result.txt
+            adb logcat -d -v time > reader-smoke-diagnostics/logcat.txt 2>&1
+            mkdir -p reader-smoke-diagnostics/test-results
+            cp -R app/build/outputs/androidTest-results/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true
+            cp -R app/build/reports/androidTests/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true
+            exit "$test_status"
       - name: Upload reader smoke diagnostics
         if: always()
         uses: actions/upload-artifact@v4
