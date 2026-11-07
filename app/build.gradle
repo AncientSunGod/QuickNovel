@@ -145,3 +145,16 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.kotlinx.io.core)
 }
+
+
+// Keep full JavaScript runtime causes in CI output and preserve XML/HTML reports
+// for failed extension compatibility tests.
+tasks.withType(Test).configureEach {
+    testLogging {
+        events "failed"
+        exceptionFormat "full"
+        showExceptions true
+        showCauses true
+        showStackTraces true
+    }
+}
