@@ -121,48 +121,50 @@ class FenrirRealProvider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val document = app.get(url).document
-        document.select("style, iframe, svg, noscript").remove()//avoid out of memory
-        val infoDiv = document.select("div#series-info")
-        val chapters = app
-            .get("$mainUrl/api/new/v2/series/${url.getSlugFromUrl()}/chapters")
+        val seriesSlug = url.substringAfter("/series/").substringBefore("?").trimEnd('/')
+        val chapterItems = app
+            .get("$mainUrl/api/new/v2/series/$seriesSlug/chapters")
             .parsed<Array<ChapterInf>>()
-            .mapNotNull { ch ->
-                if (ch.locked.price > 0) null
-                else newChapterData(
-                    "${ch.name} ${if (ch.title.isNullOrEmpty()) "" else "- ${ch.title}"}",
-                    "$url/${ch.slug}/__data.json?x-sveltekit-invalidated=10001"
-                ) {
-                    dateOfRelease = ch.updatedAt.split("T")[0]
-                }
-            }
 
-        val title = infoDiv.selectFirst("h1")?.text() ?: throw Exception("Title not found")
-        val script =
-            document.select("script").find { it.html().contains("seriesData") }?.html() ?: ""
+        val chapters = chapterItems.mapNotNull { chapter ->
+            if ((chapter.locked?.price ?: 0) > 0) return@mapNotNull null
+            val number = chapter.number ?: return@mapNotNull null
+            val chapterSlug = chapter.slug?.takeIf { it.isNotBlank() } ?: "chapter-$number"
+            val groupSlug = chapter.group?.slug?.takeIf { it.isNotBlank() }
+            val path = listOfNotNull(groupSlug, chapterSlug).joinToString("/")
+            val chapterUrl = "$mainUrl/series/$seriesSlug/$path" +
+                (chapter.id?.takeIf { it.isNotBlank() }?.let { "~~$it" } ?: "")
+            newChapterData(
+                chapter.title?.takeIf { it.isNotBlank() } ?: "Chapter $number",
+                chapterUrl,
+            ) {
+                dateOfRelease = chapter.updatedAt?.substringBefore("T")
+            }
+        }
+
+        val document = app.get(url).document
+        document.select("style, iframe, svg, noscript").remove()
+        val title = document.selectFirst("h1")?.text()
+            ?: throw ErrorLoadingException("Fenrir Realm series title was not found")
 
         return newStreamResponse(title, url, chapters) {
-            infoDiv.select(" > div").forEachIndexed { index, inf ->
+            val infoDiv = document.selectFirst("div#series-info")
+            infoDiv?.select(" > div")?.forEachIndexed { index, inf ->
                 when (index) {
-                    1 -> {
-                        setStatus(inf.selectFirst("span")?.text())
-                    }
-
-                    2 -> {
-                        this.author = inf.selectFirst("a")?.text()
-                    }
-
-                    3 -> {
-                        this.tags = infoDiv.select("a").mapNotNull {
-                            it.text().trim().takeIf { text -> text.isNotEmpty() }
-                        }
+                    1 -> setStatus(inf.selectFirst("span")?.text())
+                    2 -> author = inf.selectFirst("a")?.text()
+                    3 -> tags = infoDiv.select("a").mapNotNull {
+                        it.text().trim().takeIf(String::isNotEmpty)
                     }
                 }
             }
-            this.synopsis = document.selectFirst("div.synopsis")?.text()
-            this.posterUrl = document.selectFirst("meta[property=og:image]")?.attr("content")
+            synopsis = document.selectFirst("div.synopsis")?.text()
+            posterUrl = document.selectFirst("meta[property=og:image]")?.attr("content")
+                ?: fixUrlNull(document.selectFirst("meta[name=twitter:image]")?.attr("content"))
             related = getRelated(url)
-            reviewData = Regex("""seriesData:\{id:(\d+)""").find(script)?.groupValues?.get(1)
+            reviewData = Regex("""seriesData:\\{id:(\\d+)""")
+                .find(document.select("script").joinToString("") { it.html() })
+                ?.groupValues?.get(1)
         }
     }
 
@@ -181,57 +183,45 @@ class FenrirRealProvider : MainAPI() {
         }
     }
 
-    private fun findChapterHtml(value: Any?, depth: Int = 0): String? {
-        if (depth > 12) return null
-        return when (value) {
-            is String -> value.takeIf { text ->
-                text.length > 20 && (
-                    text.contains("<p", ignoreCase = true) ||
-                    text.contains("<div", ignoreCase = true) ||
-                    text.contains("<article", ignoreCase = true)
-                )
-            }
-            is List<*> -> value.firstNotNullOfOrNull { findChapterHtml(it, depth + 1) }
-            is Map<*, *> -> value.values.firstNotNullOfOrNull { findChapterHtml(it, depth + 1) }
-            else -> null
-        }
-    }
-
     override suspend fun loadHtml(url: String): String {
-        // SvelteKit's serialized node layout changes between page builds. Keep the
-        // JSON route as the fast path, but do not fail immediately if the site changes
-        // its payload or returns a browser-verification page.
-        val response = runCatching { app.get(url).parsed<ChapterResponse>() }.getOrNull()
-        val legacyValue = response?.nodes
-            ?.filter { it.type == "data" }
-            ?.getOrNull(1)?.data?.getOrNull(6)
-        val chapterText = findChapterHtml(legacyValue)
-            ?: response?.nodes?.asSequence()
-                ?.filter { it.type == "data" }
-                ?.mapNotNull { findChapterHtml(it.data) }
-                ?.firstOrNull()
+        val chapterPageUrl = url.substringBefore("~~").substringBefore("/__data.json")
+        val selectors = listOf(
+            ".reader-area p",
+            "div.content-area p",
+            "[id^=reader-area] p",
+            ".chapter-content p",
+            ".chapter-body p",
+        )
 
-        val sourceHtml = chapterText ?: run {
-            val chapterPageUrl = url.substringBefore("/__data.json")
+        val pageHtml = runCatching {
+            val document = app.get(chapterPageUrl).document
+            document.select("script, style, iframe, svg, noscript, [aria-hidden=true]").remove()
+            selectors.firstNotNullOfOrNull { selector ->
+                document.select(selector)
+                    .map { it.outerHtml() }
+                    .filter { it.isNotBlank() }
+                    .takeIf { it.isNotEmpty() }
+                    ?.joinToString("\\n")
+            } ?: document.selectFirst("#reader-area, .reader-area, .content-area, .chapter-content, .chapter-body")
+                ?.html()
+        }.getOrNull()
+
+        val sourceHtml = pageHtml?.takeIf { Jsoup.parse(it).text().length > 40 } ?: run {
             val script = """
                 (function() {
-                    const selectors = [
-                        ".chapter-content", ".chapter-body", "#chapter-content",
-                        ".reader-content", ".chapter-text", "[class*=chapter-content]",
-                        "[class*=chapter-body]", "article", "main"
+                    var selectors = [
+                        ".reader-area", "div.content-area", "[id^=reader-area]",
+                        ".chapter-content", ".chapter-body", "article"
                     ];
-                    let attempts = 0;
-                    let finished = false;
-                    const check = function() {
+                    var attempts = 0;
+                    var finished = false;
+                    var check = function() {
                         if (finished) return;
-                        for (const selector of selectors) {
-                            const element = document.querySelector(selector);
+                        for (var i = 0; i < selectors.length; i++) {
+                            var element = document.querySelector(selectors[i]);
                             if (!element) continue;
-                            const text = (element.innerText || "").trim();
-                            const paragraphs = element.querySelectorAll("p").length;
-                            // Do not capture the transient Cloudflare/verification spinner
-                            // or the surrounding page chrome as if it were chapter text.
-                            if (text.length > 400 && paragraphs >= 1 &&
+                            var text = (element.innerText || "").trim();
+                            if (text.length > 40 && element.querySelector("p") &&
                                 !/verifying access|checking your browser|access denied/i.test(text)) {
                                 finished = true;
                                 NativeAndroid.onElementFound(element.innerHTML);
@@ -239,9 +229,9 @@ class FenrirRealProvider : MainAPI() {
                             }
                         }
                     };
-                    const observer = new MutationObserver(check);
+                    var observer = new MutationObserver(check);
                     observer.observe(document.documentElement, { childList: true, subtree: true });
-                    const timer = setInterval(function() {
+                    var timer = setInterval(function() {
                         check();
                         if (++attempts >= 60) {
                             clearInterval(timer);
@@ -254,14 +244,14 @@ class FenrirRealProvider : MainAPI() {
             runCatching {
                 com.lagradost.quicknovel.network.WebViewResolver(
                     scriptToFinish = script,
-                    useOkhttp = false
+                    useOkhttp = false,
                 ).resolveUsingWebView(chapterPageUrl)
             }.getOrNull()
         } ?: throw ErrorLoadingException("Fenrir Realm returned no readable chapter content.")
 
         val chapterHtml = Jsoup.parse(sourceHtml)
-        chapterHtml.select("script, style, iframe, svg, noscript").remove()
-        chapterHtml.select("[aria-hidden=true]").remove()
+        chapterHtml.select("script, style, iframe, svg, noscript, [aria-hidden=true]").remove()
+        chapterHtml.select(".reader-attribution, [data-fr-attr]").remove()
         val content = chapterHtml.body().html()
         if (content.isBlank()) throw ErrorLoadingException("Fenrir Realm returned an empty chapter.")
         return content
@@ -298,21 +288,34 @@ class FenrirRealProvider : MainAPI() {
     )
 
     data class ChapterInf(
+        @JsonProperty("id")
+        val id: String? = null,
         @JsonProperty("slug")
-        val slug: String,
+        val slug: String? = null,
+        @JsonProperty("number")
+        val number: Int? = null,
         @JsonProperty("name")
-        val name: String,
+        val name: String? = null,
         @JsonProperty("title")
-        val title: String?,
+        val title: String? = null,
         @JsonProperty("updated_at")
-        val updatedAt: String,
+        val updatedAt: String? = null,
         @JsonProperty("locked")
-        val locked: Locked,
+        val locked: Locked? = null,
+        @JsonProperty("group")
+        val group: ChapterGroup? = null,
+    )
+
+    data class ChapterGroup(
+        @JsonProperty("slug")
+        val slug: String? = null,
+        @JsonProperty("index")
+        val index: Int? = null,
     )
 
     data class Locked(
         @JsonProperty("price")
-        val price: Int,
+        val price: Int = 0,
     )
 
     data class CommentsResponse(
