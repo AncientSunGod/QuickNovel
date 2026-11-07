@@ -48,7 +48,7 @@ class FreeWebNovelExtensionCompatibilityTest {
                             assertTrue(headers["Content-Type"].orEmpty().contains("application/x-www-form-urlencoded"))
                             assertTrue(body.orEmpty().contains("aid=123"))
                             assertTrue(body.orEmpty().contains("acode=sample-acode"))
-                            assertTrue(Regex("""cid=\\d+""").containsMatchIn(body.orEmpty()))
+                            assertTrue(Regex("""cid=\d+""").containsMatchIn(body.orEmpty()))
                             ExtensionHttpClient.TextResponse(
                                 url, 200, "application/json",
                                 """{"html":"<a href='/novel/sample/chapter-1' title='Chapter One'>Chapter One</a><a href='/novel/sample/chapter-2' title='Chapter Two'>Chapter Two</a>","totalPage":1}""",
