@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import android.widget.ProgressBar
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -29,7 +30,13 @@ class ReaderActivitySmokeTest {
 
             override suspend fun loadHtml(url: String): String {
                 providerWasCalled.set(true)
-                return "<p>Reader smoke chapter body</p>"
+                return buildString {
+                    repeat(80) { index ->
+                        append("<p>Reader smoke chapter body $index. ")
+                        append("A long passage for reader progress testing. ".repeat(30))
+                        append("</p>")
+                    }
+                }
             }
         }
         val bookTitle = "Reader smoke ${System.currentTimeMillis()}"
@@ -87,6 +94,32 @@ class ReaderActivitySmokeTest {
                 assertTrue(
                     "Provider returned chapter HTML but reader did not render it (adapter items=$adapterItems)",
                     rendered,
+                )
+
+                var progressVisible = false
+                scenario.onActivity { activity ->
+                    val recycler = activity.findViewById<RecyclerView>(R.id.real_text)
+                    val progress = activity.findViewById<ProgressBar>(R.id.read_overflow_progress)
+                    progressVisible = progress?.visibility == View.VISIBLE
+                    val lastPosition = (recycler.adapter?.itemCount ?: 1) - 1
+                    if (lastPosition >= 0) recycler.scrollToPosition(lastPosition)
+                    recycler.scrollBy(0, 100_000)
+                }
+                SystemClock.sleep(500)
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                var progressAfterScroll = 0
+                scenario.onActivity { activity ->
+                    progressAfterScroll = activity
+                        .findViewById<ProgressBar>(R.id.read_overflow_progress)
+                        ?.progress ?: 0
+                }
+                assertTrue(
+                    "Reader progress overlay stayed hidden after a chapter rendered",
+                    progressVisible,
+                )
+                assertTrue(
+                    "Reader progress did not advance after scrolling (progress=$progressAfterScroll)",
+                    progressAfterScroll > 0,
                 )
             }
         } finally {
