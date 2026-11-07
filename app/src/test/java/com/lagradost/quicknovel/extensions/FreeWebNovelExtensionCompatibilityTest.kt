@@ -1,6 +1,6 @@
 package com.lagradost.quicknovel.extensions
 
-import org.json.JSONObject
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,10 +24,8 @@ class FreeWebNovelExtensionCompatibilityTest {
                 repositoryUrl = "https://example.com/plugins.min.json",
                 bundlePath = bundle.absolutePath,
             )
-            val result = ExtensionJsRuntime.execute(
+            val api = ExtensionMainAPI(
                 extension = extension,
-                operation = "parseNovel",
-                argumentsJson = """["novel/sample.html"]""",
                 testRequestOverride = { url, method, headers, body ->
                     when {
                         url == "https://freewebnovel.com/novel/sample.html" -> {
@@ -54,14 +52,26 @@ class FreeWebNovelExtensionCompatibilityTest {
                                 """{"html":"<a href='/novel/sample/chapter-1' title='Chapter One'>Chapter One</a><a href='/novel/sample/chapter-2' title='Chapter Two'>Chapter Two</a>","totalPage":1}""",
                             )
                         }
+                        url == "https://freewebnovel.com/novel/sample/chapter-1" -> {
+                            assertEquals("GET", method)
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "text/html",
+                                """<div class="txt"><p>FreeWebNovel chapter body opens</p></div>""",
+                            )
+                        }
                         else -> throw AssertionError("Unexpected FreeWebNovel request: $method $url")
                     }
                 },
-            ).getOrThrow()
-            val novel = JSONObject(result.json)
-            assertEquals("Sample FWN Novel", novel.getString("name"))
-            assertEquals(2, novel.getJSONArray("chapters").length())
-            assertEquals("Chapter One", novel.getJSONArray("chapters").getJSONObject(0).getString("name"))
+            )
+            val novel = runBlocking {
+                api.load("https://freewebnovel.com/novel/sample.html#qn_ext_path=novel%2Fsample.html")
+            }
+            assertEquals("Sample FWN Novel", novel?.name)
+            assertEquals(2, novel?.data?.size)
+            assertEquals("Chapter One", novel?.data?.firstOrNull()?.name)
+            assertTrue(novel?.data?.firstOrNull()?.url.orEmpty().contains("#qn_ext_path="))
+            val chapterHtml = runBlocking { api.loadHtml(novel!!.data.first().url) }
+            assertTrue(chapterHtml.orEmpty().contains("FreeWebNovel chapter body opens"))
         } finally {
             bundle.delete()
         }
