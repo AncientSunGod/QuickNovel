@@ -24,6 +24,15 @@ class NovelPingCompatibilityTest {
                 repositoryUrl = "https://example.com/plugins.min.json",
                 bundlePath = bundle.absolutePath,
             )
+            // Real NovelPing parses the full novel page through htmlparser2. Keep a
+            // large but otherwise irrelevant comment to reproduce the >2 MB page that
+            // previously failed before the plugin could build its chapter catalogue.
+            val largeHtml = "<html><body><!--" +
+                "x".repeat(2 * 1024 * 1024 + 2048) +
+                "--><div class=\"books\"><img src=\"/cover.jpg\" title=\"Sample Novel\"></div>" +
+                "<div id=\"indexListPage\" data-novel-id=\"123\" data-total-chapters=\"2\"></div>" +
+                "<span class=\"disqus\" data-disqus-identifier=\"sample-acode\"></span>" +
+                "</body></html>"
             val result = ExtensionJsRuntime.execute(
                 extension = extension,
                 operation = "parseNovel",
@@ -34,13 +43,7 @@ class NovelPingCompatibilityTest {
                             assertEquals("GET", method)
                             ExtensionHttpClient.TextResponse(
                                 url, 200, "text/html",
-                                """
-                                <html><body>
-                                  <div class="books"><img src="/cover.jpg" title="Sample Novel"></div>
-                                  <div id="indexListPage" data-novel-id="123" data-total-chapters="2"></div>
-                                  <span class="disqus" data-disqus-identifier="sample-acode"></span>
-                                </body></html>
-                                """.trimIndent(),
+                                largeHtml,
                             )
                         }
                         url == "https://novelping.com/ajax/chapter-archive" -> {
