@@ -152,15 +152,26 @@ class ExtensionMainAPI internal constructor(
         )
     }
 
+    private fun chapterArray(novel: JSONObject): JSONArray =
+        novel.optJSONArray("chapters")
+            ?: novel.optJSONArray("chapterList")
+            ?: novel.optJSONArray("chapter_list")
+            ?: novel.optJSONObject("data")?.optJSONArray("chapters")
+            ?: novel.optJSONObject("novel")?.optJSONArray("chapters")
+            ?: JSONArray()
+
     private fun loadAdditionalChapterPages(novelPath: String, novel: JSONObject) {
-        val totalPages = novel.optInt("totalPages", 1)
+        val totalPages = novel.optInt(
+            "totalPages",
+            novel.optInt("totalPage", novel.optInt("total_pages", novel.optInt("pageCount", 1))),
+        )
         if (totalPages <= 1) return
         require(totalPages <= MAX_CHAPTER_PAGES) {
             "Extension chapter pagination exceeds the $MAX_CHAPTER_PAGES page limit."
         }
 
         val combined = JSONArray()
-        val firstPage = novel.optJSONArray("chapters") ?: JSONArray()
+        val firstPage = chapterArray(novel)
         for (index in 0 until firstPage.length()) {
             combined.put(firstPage.opt(index))
         }
@@ -170,9 +181,12 @@ class ExtensionMainAPI internal constructor(
                 "parsePage",
                 JSONArray().put(novelPath).put(page.toString()),
             ) ?: throw IllegalStateException("Extension did not return chapter page $page.")
-            val pageObject = JSONObject(rawPage)
-            val pageChapters = pageObject.optJSONArray("chapters")
-                ?: throw IllegalStateException("Extension chapter page $page is missing its chapters array.")
+            val pageValue = org.json.JSONTokener(rawPage).nextValue()
+            val pageChapters = when (pageValue) {
+                is JSONArray -> pageValue
+                is JSONObject -> chapterArray(pageValue)
+                else -> null
+            } ?: throw IllegalStateException("Extension chapter page $page is missing its chapters array.")
             for (index in 0 until pageChapters.length()) {
                 combined.put(pageChapters.opt(index))
                 require(combined.length() <= MAX_TOTAL_CHAPTERS) {
