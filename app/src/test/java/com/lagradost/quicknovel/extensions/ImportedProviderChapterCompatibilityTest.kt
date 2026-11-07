@@ -143,4 +143,54 @@ class ImportedProviderChapterCompatibilityTest {
         }
     }
 
+    @Test
+    fun wtrLabChapterUsesSelectedTranslationFallbackAndBrowserReferer() {
+        val (extension, file) = installed(
+            "wtrlab-translation", "WTR-Lab", "https://wtr-lab.com",
+            fixture("/lnreader/wtrlab.js"),
+        )
+        val requestedModes = mutableListOf<String>()
+        val expectedReferer = "https://wtr-lab.com/serie-123/sample/chapter-1"
+        try {
+            ExtensionJsRuntime.execute(extension, "getPluginSettings", "[]").getOrThrow()
+            ExtensionJsRuntime.execute(
+                extension, "setPluginSetting", """["showModeNotice",false]"""
+            ).getOrThrow()
+
+            val result = ExtensionJsRuntime.execute(
+                extension,
+                "parseChapter",
+                """["serie-123/sample/chapter-1"]""",
+                testRequestOverride = { url, method, headers, body ->
+                    assertEquals("https://wtr-lab.com/api/reader/get", url)
+                    assertEquals("POST", method)
+                    assertEquals(
+                        expectedReferer,
+                        headers.entries.firstOrNull { it.key.equals("referer", ignoreCase = true) }?.value,
+                    )
+                    val mode = JSONObject(body.orEmpty()).getString("translate")
+                    requestedModes += mode
+                    if (mode == "ai") {
+                        ExtensionHttpClient.TextResponse(
+                            url, 200, "application/json",
+                            """{"success":false,"message":"AI translation unavailable"}""",
+                        )
+                    } else {
+                        assertEquals("web", mode)
+                        ExtensionHttpClient.TextResponse(
+                            url, 200, "application/json",
+                            """{"success":true,"chapter":{"title":"Chapter One"},"data":{"data":{"body":"WTR-LAB chapter body"}}}""",
+                        )
+                    }
+                },
+            ).getOrThrow()
+
+            assertEquals(listOf("ai", "web"), requestedModes)
+            assertTrue(result.json.contains("Chapter One"))
+            assertTrue(result.json.contains("WTR-LAB chapter body"))
+        } finally {
+            file.delete()
+        }
+    }
+
 }
