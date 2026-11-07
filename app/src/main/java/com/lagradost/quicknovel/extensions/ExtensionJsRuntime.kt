@@ -440,6 +440,33 @@ object ExtensionJsRuntime {
                     function QNURLSearchParams(query, owner) {
                       this._pairs = [];
                       this._owner = owner || null;
+                      // The WHATWG constructor accepts strings, iterable pairs, and
+                      // plain records. LNReader multisource plugins commonly pass a
+                      // record here for PHP chapter-archive POST bodies, e.g.
+                      // new URLSearchParams({ novelId: id, acode: code }).
+                      if (query && typeof query === 'object') {
+                        if (query instanceof QNURLSearchParams) {
+                          this._pairs = query._pairs.map(function(pair) { return [pair[0], pair[1]]; });
+                        } else if (Array.isArray(query)) {
+                          query.forEach(function(pair) {
+                            if (Array.isArray(pair) && pair.length >= 2) {
+                              this._pairs.push([String(pair[0]), String(pair[1])]);
+                            }
+                          }, this);
+                        } else {
+                          Object.keys(query).forEach(function(key) {
+                            var value = query[key];
+                            if (Array.isArray(value)) {
+                              value.forEach(function(entry) {
+                                this._pairs.push([key, String(entry)]);
+                              }, this);
+                            } else {
+                              this._pairs.push([key, String(value)]);
+                            }
+                          }, this);
+                        }
+                        return;
+                      }
                       var raw = String(query || '').replace(/^\?/, '');
                       if (raw) raw.split('&').forEach(function(part) {
                         if (!part) return;
