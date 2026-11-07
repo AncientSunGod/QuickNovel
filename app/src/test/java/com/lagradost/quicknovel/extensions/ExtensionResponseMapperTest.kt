@@ -185,4 +185,44 @@ class ExtensionResponseMapperTest {
         assertEquals("2026-10-01", novel.data.single().dateOfRelease)
     }
 
+    @Test
+    fun mapsAlternateChapterListAndUrlFieldNamesUsedByExtensions() {
+        val novel = ExtensionResponseMapper.parseNovel(
+            json = """{
+              "name":"Alternate fields",
+              "url":"/novel/alternate",
+              "chapterList":[
+                {"chapter_name":"Chapter One","chapter_url":"/novel/alternate/chapter-1","date":"2026-10-01"},
+                {"chapterTitle":"Chapter Two","link":"/novel/alternate/chapter-2","updatedAt":"2026-10-02"}
+              ]
+            }""",
+            apiName = "Test provider",
+            baseUrl = "https://reader.example/",
+            requestedUrl = "https://reader.example/novel/alternate",
+        )
+
+        assertEquals(2, novel.data.size)
+        assertEquals("Chapter One", novel.data[0].name)
+        assertEquals("https://reader.example/novel/alternate/chapter-1", novel.data[0].url)
+        assertEquals("2026-10-01", novel.data[0].dateOfRelease)
+        assertEquals("Chapter Two", novel.data[1].name)
+        assertEquals("https://reader.example/novel/alternate/chapter-2", novel.data[1].url)
+    }
+
+    @Test
+    fun mapsNestedChapterListFromProviderResponseEnvelope() {
+        val novel = ExtensionResponseMapper.parseNovel(
+            json = """{
+              "title":"Nested response",
+              "url":"/novel/nested",
+              "data":{"chapters":[{"name":"Chapter 1","path":"/chapter/1"}]}
+            }""",
+            apiName = "Test provider",
+            baseUrl = "https://reader.example/",
+            requestedUrl = "https://reader.example/novel/nested",
+        )
+        assertEquals(1, novel.data.size)
+        assertEquals("Chapter 1", novel.data.single().name)
+    }
+
 }
