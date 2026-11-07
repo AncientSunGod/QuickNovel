@@ -876,6 +876,19 @@ object ExtensionJsRuntime {
                         this.handlers = handlers || {};
                         this.source = '';
                       }
+                      // LNReader multisrc bundles use the htmlparser2 Parser instance
+                      // method while rebuilding chapter HTML. Keep this list aligned with
+                      // HTML's void elements: they have no closing tag and must not emit one.
+                      var voidElements = {
+                        area:true, base:true, br:true, col:true, embed:true, hr:true,
+                        img:true, input:true, link:true, meta:true, param:true,
+                        source:true, track:true, wbr:true
+                      };
+                      Parser.prototype.isVoidElement = function(name) {
+                        return Object.prototype.hasOwnProperty.call(
+                          voidElements, String(name == null ? '' : name).toLowerCase()
+                        );
+                      };
                       Parser.prototype.write = function(chunk) {
                         this.source += String(chunk == null ? '' : chunk);
                         return this;
