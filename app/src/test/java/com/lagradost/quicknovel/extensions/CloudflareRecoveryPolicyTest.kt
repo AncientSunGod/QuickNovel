@@ -16,13 +16,14 @@ class CloudflareRecoveryPolicyTest {
         assertTrue(shouldAttemptCloudflareRecovery(503, "cloudflare", null, null))
         assertTrue(shouldAttemptCloudflareRecovery(503, null, "abc123", null))
         assertTrue(shouldAttemptCloudflareRecovery(503, null, null, "challenge"))
+        assertTrue(shouldAttemptCloudflareRecovery(200, "cloudflare", null, "challenge"))
         assertFalse(shouldAttemptCloudflareRecovery(503, "nginx", null, null))
         assertFalse(shouldAttemptCloudflareRecovery(503, null, null, null))
     }
 
     @Test
     fun ignoresUnrelatedStatuses() {
-        assertFalse(shouldAttemptCloudflareRecovery(200, "cloudflare", "abc123", "challenge"))
-        assertFalse(shouldAttemptCloudflareRecovery(404, "cloudflare", "abc123", "challenge"))
+        assertFalse(shouldAttemptCloudflareRecovery(200, "cloudflare", "abc123", null))
+        assertFalse(shouldAttemptCloudflareRecovery(404, "cloudflare", "abc123", null))
     }
 }
