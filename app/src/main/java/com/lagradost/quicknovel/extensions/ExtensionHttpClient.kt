@@ -35,7 +35,7 @@ object ExtensionHttpClient {
     private const val CONNECT_TIMEOUT_MS = 10_000
     private const val READ_TIMEOUT_MS = 15_000
     private const val MAX_REDIRECTS = 5
-    private const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+    private const val MAX_RESPONSE_BYTES = 8 * 1024 * 1024
     private const val MAX_REQUEST_BYTES = 256 * 1024
     private const val MAX_HEADER_VALUE_LENGTH = 2_000
 
