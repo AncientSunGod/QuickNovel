@@ -2,7 +2,6 @@ package com.lagradost.quicknovel.providers
 
 import android.util.Base64
 import com.fasterxml.jackson.annotation.JsonProperty
-import com.fasterxml.jackson.databind.JsonNode
 import com.lagradost.quicknovel.ChapterData
 import com.lagradost.quicknovel.ErrorLoadingException
 import com.lagradost.quicknovel.HeadMainPageResponse
@@ -19,46 +18,11 @@ import com.lagradost.quicknovel.newSearchResponse
 import com.lagradost.quicknovel.newStreamResponse
 import com.lagradost.quicknovel.setStatus
 import com.lagradost.quicknovel.util.AppUtils.parseJson
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.roundToInt
 
-
-
-/**
- * WTR-Lab's current reader endpoint stores paragraph fragments in data.body and
- * image URLs separately. Render those into the HTML consumed by QuickNovel's reader.
- */
-internal fun buildWtrLabChapterHtml(
-    body: List<String>,
-    images: List<String>,
-    glossaryTerms: List<String>,
-): String {
-    var imageIndex = 0
-    return buildString {
-        body.forEach { fragment ->
-            if (fragment.trim() == "[image]") {
-                val imageUrl = images.getOrNull(imageIndex++)
-                if (!imageUrl.isNullOrBlank()) {
-                    append(Element("img").attr("src", imageUrl).outerHtml())
-                }
-            } else {
-                var text = Jsoup.parseBodyFragment(fragment).text()
-                glossaryTerms.forEachIndexed { index, term ->
-                    text = text
-                        .replace("※${index}⛬", term)
-                        .replace("※${index}〓", term)
-                }
-                if (text.isNotBlank()) {
-                    append(Element("p").text(text).outerHtml())
-                }
-            }
-        }
-    }
-}
 
 class WtrLabProvider : MainAPI() {
     override val mainUrl = "https://wtr-lab.com"
@@ -283,100 +247,44 @@ class WtrLabProvider : MainAPI() {
         try {
             val doc = app.get(urlWithService).document
             val jsonNode = doc.selectFirst("#__NEXT_DATA__")
-            val json = jsonNode?.data() ?: throw ErrorLoadingException("No chapter metadata found")
+            val json = jsonNode?.data() ?: throw ErrorLoadingException("No se encontró JSON de capítulos")
             val chaptersJson = parseJson<LoadJsonResponse.Root>(json)
             val chapter = chaptersJson.props.pageProps.serie
-            val chapterNo = chapter.chapter.slug
-                ?.let { Regex("""^(?:chapter-)?(\\d+)$""", RegexOption.IGNORE_CASE).matchEntire(it)?.groupValues?.get(1) }
-                ?: Regex("""/chapter-(\\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
-                    .find(url)?.groupValues?.get(1)
-                ?: throw ErrorLoadingException("WTR-Lab chapter number was not found")
 
-            val readerPayload = app.post(
-                url = "$mainUrl/api/reader/get",
-                data = mapOf(
-                    "chapter_id" to chapter.chapter.id.toString(),
-                    "chapter_no" to chapterNo,
-                    "force_retry" to "false",
-                    "language" to "en",
-                    "raw_id" to chapter.serieData.rawId.toString(),
-                    "retry" to "false",
-                    "translate" to "web",
-                )
-            ).text
-            val readerJson = parseJson<JsonNode>(readerPayload)
+        val root = app.post(
+            url = "$mainUrl/api/reader/get", data = mapOf(
+                "chapter_id" to chapter.chapter.id.toString(),
+                "chapter_no" to chapter.serieData.slug,
+                "force_retry" to "false",
+                "language" to "en",
+                "raw_id" to chapter.serieData.rawId.toString(),
+                "retry" to "false",
+                "translate" to "web",
+            )
+        ).parsed<LoadJsonResponse2.Root>()
 
-            // Current WTR-Lab responses return a content_url; the actual chapter body
-            // is fetched separately. Older responses embedded an encrypted body at
-            // data.data.body. Support both formats instead of treating the new
-            // content_url response as an empty chapter.
-            val contentUrl = sequenceOf(
-                readerJson.path("content_url"),
-                readerJson.path("data").path("content_url"),
-                readerJson.path("data").path("data").path("content_url"),
-            ).map { it.asText("") }.firstOrNull { it.isNotBlank() }
-
-            if (!contentUrl.isNullOrBlank()) {
-                val resolvedUrl = if (contentUrl.startsWith("http", true)) contentUrl else "$mainUrl/${contentUrl.trimStart('/')}"
-                val contentPayload = app.get(resolvedUrl).text
-                val contentJson = runCatching { parseJson<JsonNode>(contentPayload) }.getOrNull()
-                if (contentJson != null) {
-                    val data = contentJson.path("data").takeUnless { it.isMissingNode || it.isNull } ?: contentJson
-                    val bodyNode = data.path("body").takeUnless { it.isMissingNode || it.isNull }
-                    if (bodyNode != null) {
-                        val body = when {
-                            bodyNode.isArray -> bodyNode.map { it.asText("") }
-                            bodyNode.isTextual -> {
-                                val rawBody = bodyNode.asText()
-                                if (rawBody.startsWith("arr:") || rawBody.startsWith("str:")) {
-                                    decryptContent(rawBody)
-                                } else {
-                                    listOf(rawBody)
-                                }
-                            }
-                            else -> emptyList()
-                        }
-                        val images = data.path("images").takeIf { it.isArray }?.map { it.asText("") }.orEmpty()
-                        val glossary = data.path("glossary_data").path("terms")
-                            .takeIf { it.isArray }
-                            ?.mapNotNull { term -> term.get(0)?.asText()?.takeIf(String::isNotBlank) }
-                            .orEmpty()
-                        val html = buildWtrLabChapterHtml(body, images, glossary)
-                        if (html.isNotBlank()) return html
-                    }
-                } else if (contentPayload.isNotBlank()) {
-                    return Jsoup.parseBodyFragment(contentPayload).body().html()
-                }
+            val paragraphs = decryptContent(root.data.data.body)
+            val text = StringBuilder()
+            for (p in paragraphs) {
+                text.append("<p>")
+                text.append(p)
+                text.append("</p>")
             }
-
-            val legacyBody = readerJson.path("data").path("data").path("body").asText("")
-            if (legacyBody.isNotBlank()) {
-                val paragraphs = decryptContent(legacyBody)
-                if (paragraphs.isNotEmpty()) {
-                    return buildWtrLabChapterHtml(paragraphs, emptyList(), emptyList())
-                }
-            }
-            throw ErrorLoadingException("WTR-Lab returned an empty chapter payload")
+            return text.toString()
         } catch (e: Exception) {
             val script = """
-                (function() {
-                    var attempts = 0;
-                    var checkInterval = setInterval(function() {
-                        var selectors = ["div.chapter-body", ".chapter-body", "[data-line]", ".reader-content"];
-                        for (var i = 0; i < selectors.length; i++) {
-                            var element = document.querySelector(selectors[i]);
-                            if (!element) continue;
-                            var firstLine = element.querySelector("[data-line]") || element;
-                            if (firstLine && (firstLine.innerText || "").trim().length > 0) {
-                                clearInterval(checkInterval);
-                                NativeAndroid.onElementFound(element.innerHTML);
-                                return;
-                            }
-                        }
-                        if (++attempts >= 60) clearInterval(checkInterval);
-                    }, 500);
-                })();
-            """.trimIndent()
+                             (function() {
+                                 var checkInterval = setInterval(function() {
+                                     var element = document.querySelector("div.chapter-body");
+                                     var firstLine = element ? element.querySelector("div[data-line]") : null;
+                                     if (firstLine && firstLine.innerText.trim().length > 0) {
+                                         clearInterval(checkInterval);
+                                         NativeAndroid.onElementFound(element.innerHTML);
+                                     }
+                                 }, 1000);
+                                 setTimeout(function() { clearInterval(checkInterval); }, 30000);
+                             })();
+                         """.trimIndent()
             return WebViewResolver(scriptToFinish = script, useOkhttp = false).resolveUsingWebView(urlWithService)
         }
     }
