@@ -686,7 +686,7 @@ object ExtensionJsRuntime {
                           return key.toLowerCase() === 'referer';
                         });
                         if (!hasReferer && init && typeof init.referrer === 'string' &&
-                            /(init.referrer.indexOf('https://') === 0 || init.referrer.indexOf('http://') === 0)) {
+                            (init.referrer.indexOf('https://') === 0 || init.referrer.indexOf('http://') === 0)) {
                           headers = Object.assign({}, headers, {Referer:init.referrer});
                         }
                         var request = {method:method, headers:headers};
@@ -762,7 +762,7 @@ object ExtensionJsRuntime {
                             return key.toLowerCase() === 'referer';
                           });
                           if (!hasReferer && init && typeof init.referrer === 'string' &&
-                              /(init.referrer.indexOf('https://') === 0 || init.referrer.indexOf('http://') === 0)) {
+                              (init.referrer.indexOf('https://') === 0 || init.referrer.indexOf('http://') === 0)) {
                             headers = Object.assign({}, headers, {Referer:init.referrer});
                           }
                           var request = {method:method,headers:headers};
