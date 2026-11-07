@@ -40,7 +40,7 @@ class ImportedProviderChapterCompatibilityTest {
                         "https://fenrirealm.com/api/new/v2/series/sample/chapters" ->
                             ExtensionHttpClient.TextResponse(
                                 url, 200, "application/json",
-                                """[{"id":101,"slug":"chapter-one","number":1,"title":"Chapter One","locked":{"price":0}}]""",
+                                """[{"id":101,"slug":"chapter-one","number":1,"title":"Chapter 1","locked":{"price":0}}]""",
                             )
                         "https://fenrirealm.com/api/new/v2/series/sample" ->
                             ExtensionHttpClient.TextResponse(
