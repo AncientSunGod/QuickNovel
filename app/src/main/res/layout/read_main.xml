@@ -501,7 +501,7 @@
             style="@style/Widget.AppCompat.ProgressBar.Horizontal"
             android:layout_width="match_parent"
             android:layout_height="5dp"
-            android:layout_gravity="bottom"
+            android:layout_gravity="top"
             android:visibility="gone"
             android:elevation="32dp"
             android:indeterminate="false"
