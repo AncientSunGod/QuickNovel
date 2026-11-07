@@ -1312,7 +1312,7 @@ object ExtensionJsRuntime {
      * selectors cross the bridge; Java objects are never exposed to the JavaScript scope.
      */
     private class HtmlBridge(private val baseUrl: String) {
-        private val maxHtmlChars = 2 * 1024 * 1024
+        private val maxHtmlChars = 8 * 1024 * 1024
         private val maxSelectorChars = 500
         private val maxResults = 1_000
         private val maxDocuments = 20
@@ -1332,7 +1332,7 @@ object ExtensionJsRuntime {
                 }.replace(Regex("""\+\s*:matches"""), "+ :matches")
 
         fun parseEvents(html: String): String {
-            require(html.length <= maxHtmlChars) { "HTML input exceeds the 2 MB limit." }
+            require(html.length <= maxHtmlChars) { "HTML input exceeds the 8 MB limit." }
             val document = Jsoup.parse(html, baseUrl)
             val events = JSONArray()
             var visited = 0
@@ -1370,7 +1370,7 @@ object ExtensionJsRuntime {
             val result: Any? = when (command) {
                 "load" -> {
                     val html = value.orEmpty()
-                    require(html.length <= maxHtmlChars) { "HTML input exceeds the 2 MB limit." }
+                    require(html.length <= maxHtmlChars) { "HTML input exceeds the 8 MB limit." }
                     require(documents.size < maxDocuments) { "Extension exceeded the HTML document limit." }
                     val id = nextId++
                     documents[id] = Jsoup.parse(html, baseUrl)
