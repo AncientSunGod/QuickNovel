@@ -11,7 +11,7 @@ import org.json.JSONObject
  * selector/text/attribute operations until the bundle's expected API is implemented.
  */
 object ExtensionHtmlParser {
-    private const val MAX_HTML_CHARS = 2 * 1024 * 1024
+    private const val MAX_HTML_CHARS = 8 * 1024 * 1024
     private const val MAX_SELECTOR_CHARS = 500
     private const val MAX_RESULTS = 1_000
     private const val MAX_TEXT_CHARS = 100_000
@@ -31,7 +31,7 @@ object ExtensionHtmlParser {
 
     fun select(html: String, selector: String, baseUrl: String = ""): Result<List<HtmlElement>> =
         runCatching {
-            require(html.length <= MAX_HTML_CHARS) { "HTML input exceeds the 2 MB limit." }
+            require(html.length <= MAX_HTML_CHARS) { "HTML input exceeds the 8 MB limit." }
             require(selector.isNotBlank() && selector.length <= MAX_SELECTOR_CHARS) {
                 "CSS selector is empty or too long."
             }
@@ -46,7 +46,7 @@ object ExtensionHtmlParser {
 
     fun text(html: String, selector: String? = null, baseUrl: String = ""): Result<String> =
         runCatching {
-            require(html.length <= MAX_HTML_CHARS) { "HTML input exceeds the 2 MB limit." }
+            require(html.length <= MAX_HTML_CHARS) { "HTML input exceeds the 8 MB limit." }
             val document = Jsoup.parse(html, baseUrl)
             val text = if (selector.isNullOrBlank()) document.text() else {
                 require(selector.length <= MAX_SELECTOR_CHARS) { "CSS selector is too long." }
@@ -61,7 +61,7 @@ object ExtensionHtmlParser {
         attribute: String,
         baseUrl: String = "",
     ): Result<String?> = runCatching {
-        require(html.length <= MAX_HTML_CHARS) { "HTML input exceeds the 2 MB limit." }
+        require(html.length <= MAX_HTML_CHARS) { "HTML input exceeds the 8 MB limit." }
         require(selector.isNotBlank() && selector.length <= MAX_SELECTOR_CHARS) {
             "CSS selector is empty or too long."
         }
