@@ -37,8 +37,14 @@ class ExtensionHtmlParserTest {
     }
 
     @Test
+    fun acceptsLargeChapterHtmlWithinEightMegabyteLimit() {
+        val largeHtml = "<p>" + "x".repeat(2 * 1024 * 1024 + 1) + "</p>"
+        assertEquals(100_000, ExtensionHtmlParser.text(largeHtml).getOrThrow().length)
+    }
+
+    @Test
     fun rejectsOversizedInputAndInvalidSelectors() {
         assertTrue(ExtensionHtmlParser.select("<p>x</p>", " ".repeat(501)).isFailure)
-        assertTrue(ExtensionHtmlParser.text("x".repeat(2 * 1024 * 1024 + 1)).isFailure)
+        assertTrue(ExtensionHtmlParser.text("x".repeat(8 * 1024 * 1024 + 1)).isFailure)
     }
 }
