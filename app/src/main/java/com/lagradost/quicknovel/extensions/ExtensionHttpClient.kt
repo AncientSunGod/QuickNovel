@@ -22,6 +22,22 @@ import kotlin.time.Duration.Companion.seconds
  * by the downloaded bundle; this remains a compatibility boundary, not process isolation.
  */
 object ExtensionHttpClient {
+    private const val CLOUDFLARE_PREFS = "quicknovel_extension_network"
+    private const val CLOUDFLARE_RECOVERY_KEY = "cloudflare_recovery_enabled"
+
+    fun isCloudflareRecoveryEnabled(): Boolean =
+        com.lagradost.quicknovel.BaseApplication.context
+            ?.getSharedPreferences(CLOUDFLARE_PREFS, android.content.Context.MODE_PRIVATE)
+            ?.getBoolean(CLOUDFLARE_RECOVERY_KEY, true) ?: true
+
+    fun setCloudflareRecoveryEnabled(enabled: Boolean) {
+        com.lagradost.quicknovel.BaseApplication.context
+            ?.getSharedPreferences(CLOUDFLARE_PREFS, android.content.Context.MODE_PRIVATE)
+            ?.edit()
+            ?.putBoolean(CLOUDFLARE_RECOVERY_KEY, enabled)
+            ?.apply()
+    }
+
     data class TextResponse(
         val url: String,
         val statusCode: Int,
@@ -199,6 +215,7 @@ object ExtensionHttpClient {
                 // one bounded attempt; if the origin itself is unavailable, the 520
                 // response is returned unchanged after this attempt.
                 if ((status == 403 || status == 520) &&
+                    isCloudflareRecoveryEnabled() &&
                     !webViewRecoveryAttempted && allowedHosts != null
                 ) {
                     webViewRecoveryAttempted = true
