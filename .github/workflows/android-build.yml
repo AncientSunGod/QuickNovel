@@ -31,6 +31,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
       - name: Run unit tests and build debug APK
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Upload unit test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickNovel-unit-test-diagnostics
+          path: |
+            app/build/test-results/testDebugUnitTest/
+            app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
