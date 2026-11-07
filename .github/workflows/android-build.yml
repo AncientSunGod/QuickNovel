@@ -47,35 +47,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: |
-            mkdir -p reader-smoke-diagnostics
-            set +e
-            boot_ready=0
-            for attempt in $(seq 1 90); do
-              boot_state=$(timeout 5s adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
-              if [ "$boot_state" = "1" ]; then
-                boot_ready=1
-                break
-              fi
-              sleep 2
-            done
-            adb devices -l > reader-smoke-diagnostics/adb-devices.txt 2>&1
-            timeout 15s adb shell getprop > reader-smoke-diagnostics/device-properties.txt 2>&1
-            if [ "$boot_ready" -ne 1 ]; then
-              echo "Emulator did not finish booting within 3 minutes" > reader-smoke-diagnostics/result.txt
-              timeout 20s adb logcat -d -v time > reader-smoke-diagnostics/logcat.txt 2>&1
-              exit 1
-            fi
-            adb shell settings put global animator_duration_scale 0
-            adb shell settings put global transition_animation_scale 0
-            adb shell settings put global window_animation_scale 0
-            timeout --kill-after=30s 15m ./gradlew --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.lagradost.quicknovel.ReaderActivitySmokeTest :app:connectedDebugAndroidTest
-            test_status=$?
-            echo "connectedDebugAndroidTest exit code: $test_status" > reader-smoke-diagnostics/result.txt
-            timeout 30s adb logcat -d -v time > reader-smoke-diagnostics/logcat.txt 2>&1
-            mkdir -p reader-smoke-diagnostics/test-results
-            cp -R app/build/outputs/androidTest-results/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true
-            cp -R app/build/reports/androidTests/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true
-            exit "$test_status"
+            bash -c 'mkdir -p reader-smoke-diagnostics; adb devices -l > reader-smoke-diagnostics/adb-devices.txt 2>&1; adb shell getprop > reader-smoke-diagnostics/device-properties.txt 2>&1; adb logcat -c; timeout --kill-after=30s 15m ./gradlew --no-daemon --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.lagradost.quicknovel.ReaderActivitySmokeTest :app:connectedDebugAndroidTest; test_status=$?; echo "connectedDebugAndroidTest exit code: $test_status" > reader-smoke-diagnostics/result.txt; adb logcat -d -v time > reader-smoke-diagnostics/logcat.txt 2>&1; mkdir -p reader-smoke-diagnostics/test-results; cp -R app/build/outputs/androidTest-results/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true; cp -R app/build/reports/androidTests/connected/. reader-smoke-diagnostics/test-results/ 2>/dev/null || true; exit "$test_status"'
       - name: Upload reader smoke diagnostics
         if: always()
         uses: actions/upload-artifact@v4
