@@ -1,6 +1,6 @@
 package com.lagradost.quicknovel.extensions
 
-import org.json.JSONObject
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -33,10 +33,8 @@ class NovelPingCompatibilityTest {
                 "<div id=\"indexListPage\" data-novel-id=\"123\" data-total-chapters=\"2\"></div>" +
                 "<span class=\"disqus\" data-disqus-identifier=\"sample-acode\"></span>" +
                 "</body></html>"
-            val result = ExtensionJsRuntime.execute(
+            val api = ExtensionMainAPI(
                 extension = extension,
-                operation = "parseNovel",
-                argumentsJson = """["novel/sample-novel"]""",
                 testRequestOverride = { url, method, headers, body ->
                     when {
                         url == "https://novelping.com/novel/sample-novel" -> {
@@ -59,12 +57,14 @@ class NovelPingCompatibilityTest {
                         else -> throw AssertionError("Unexpected NovelPing request: $method $url")
                     }
                 },
-            ).getOrThrow()
-            val novel = JSONObject(result.json)
-            assertEquals("Sample Novel", novel.getString("name"))
-            assertEquals(2, novel.getJSONArray("chapters").length())
-            assertEquals("Chapter One", novel.getJSONArray("chapters").getJSONObject(0).getString("name"))
-            assertEquals("novel/sample-novel/chapter-1", novel.getJSONArray("chapters").getJSONObject(0).getString("path"))
+            )
+            val novel = runBlocking {
+                api.load("https://novelping.com/novel/sample-novel#qn_ext_path=novel%2Fsample-novel")
+            }
+            assertEquals("Sample Novel", novel?.name)
+            assertEquals(2, novel?.data?.size)
+            assertEquals("Chapter One", novel?.data?.firstOrNull()?.name)
+            assertTrue(novel?.data?.firstOrNull()?.url.orEmpty().contains("#qn_ext_path="))
         } finally {
             bundle.delete()
         }
