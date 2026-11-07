@@ -103,4 +103,44 @@ class ImportedProviderChapterCompatibilityTest {
             file.delete()
         }
     }
+    @Test
+    fun fenrirRealmImportedBundleLoadsChapterBodyThroughCurrentApi() {
+        val (extension, file) = installed(
+            "fenrirrealm-chapter", "Fenrir Realm", "https://fenrirealm.com",
+            fixture("/lnreader/fenrirrealm.js"),
+        )
+        val requested = mutableListOf<Pair<String, String>>()
+        try {
+            val result = ExtensionJsRuntime.execute(
+                extension,
+                "parseChapter",
+                """["sample/chapter-one~~101"]""",
+                testRequestOverride = { url, method, _, _ ->
+                    requested += method to url
+                    when {
+                        method == "POST" && url == "https://fenrirealm.com/api/read-token" ->
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "application/json",
+                                """{"active":false}""",
+                            )
+                        method == "GET" && url == "https://fenrirealm.com/api/new/v2/chapters/101" ->
+                            ExtensionHttpClient.TextResponse(
+                                url, 200, "application/json",
+                                """{"id":101,"content_format":"html","content":"<p>Fenrir Realm chapter body</p>"}""",
+                            )
+                        else -> throw AssertionError("Unexpected Fenrir chapter request: $method $url")
+                    }
+                },
+            ).getOrThrow()
+
+            assertTrue(
+                "Fenrir chapter endpoint was not requested",
+                requested.contains("GET" to "https://fenrirealm.com/api/new/v2/chapters/101"),
+            )
+            assertTrue(result.json.contains("Fenrir Realm chapter body"))
+        } finally {
+            file.delete()
+        }
+    }
+
 }
