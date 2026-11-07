@@ -57,13 +57,22 @@ internal fun buildFreeWebNovelAjaxChapterPageUrl(
     pageUrl: String,
     page: Int,
     pageSize: Int = 40,
-): String = Uri.parse(pageUrl).buildUpon()
-    .clearQuery()
-    .appendQueryParameter("ajax", "chapters")
-    .appendQueryParameter("page", page.coerceAtLeast(1).toString())
-    .appendQueryParameter("pageSize", pageSize.coerceIn(1, 100).toString())
-    .build()
-    .toString()
+): String {
+    // Keep this URL builder JVM-testable: android.net.Uri is a framework stub in
+    // local unit tests and throws "Method parse not mocked" outside an Android runtime.
+    // The dynamic query values below are integers, so they need no additional encoding.
+    val uri = java.net.URI(pageUrl)
+    return buildString {
+        append(uri.scheme)
+        append("://")
+        append(uri.rawAuthority)
+        append(uri.rawPath.orEmpty())
+        append("?ajax=chapters&page=")
+        append(page.coerceAtLeast(1))
+        append("&pageSize=")
+        append(pageSize.coerceIn(1, 100))
+    }
+}
 
 /** Parse chapter links from the novel page or the chapter-archive fragment. */
 internal fun parseFreeWebNovelTocLinks(
