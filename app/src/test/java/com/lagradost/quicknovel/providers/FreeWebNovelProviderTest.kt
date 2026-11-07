@@ -7,6 +7,18 @@ import org.junit.Test
 
 class FreeWebNovelProviderTest {
     @Test
+    fun buildsTheOfficialPaginatedAjaxChapterUrl() {
+        assertEquals(
+            "https://freewebnovel.com/novel/sample.html?ajax=chapters&page=2&pageSize=40",
+            buildFreeWebNovelAjaxChapterPageUrl(
+                "https://freewebnovel.com/novel/sample.html?tracking=ignored",
+                page = 2,
+            ),
+        )
+    }
+
+
+    @Test
     fun acceptsCurrentAjaxResponseWithoutLegacyCodeField() {
         val response = parseFreeWebNovelTocAjaxResponse(
             """{"html":"<ul id='idData'><li><a href='/novel/sample/chapter-1'>Chapter 1</a></li></ul>","totalPage":4}"""
