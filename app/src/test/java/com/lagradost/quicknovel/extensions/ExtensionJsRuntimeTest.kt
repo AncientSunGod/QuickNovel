@@ -997,4 +997,22 @@ class ExtensionJsRuntimeTest {
         }
     }
 
+    @Test
+    fun supportsObjectAndPairArrayUrlSearchParamsConstructors() {
+        val (extension, file) = extension(
+            "module.exports = { searchNovels: function() { " +
+                "var params = new URLSearchParams({novelId:123, acode:'sample code', tag:['one','two']}); " +
+                "var pairs = new URLSearchParams([['page','2'],['size',40]]); " +
+                "return [{name:params.toString(),path:pairs.toString()}]; } };"
+        )
+        try {
+            val result = ExtensionJsRuntime.execute(extension, "searchNovels", "[]").getOrThrow()
+            val item = JSONArray(result.json).getJSONObject(0)
+            assertEquals("novelId=123&acode=sample+code&tag=one&tag=two", item.getString("name"))
+            assertEquals("page=2&size=40", item.getString("path"))
+        } finally {
+            file.delete()
+        }
+    }
+
 }
