@@ -52,6 +52,19 @@ internal fun parseFreeWebNovelTocAjaxResponse(responseText: String): FreeWebNove
     return FreeWebNovelTocAjaxPage(html, totalPages)
 }
 
+/** Build the paginated AJAX URL used by the LNReader ReadNovelFull multisrc source. */
+internal fun buildFreeWebNovelAjaxChapterPageUrl(
+    pageUrl: String,
+    page: Int,
+    pageSize: Int = 40,
+): String = Uri.parse(pageUrl).buildUpon()
+    .clearQuery()
+    .appendQueryParameter("ajax", "chapters")
+    .appendQueryParameter("page", page.coerceAtLeast(1).toString())
+    .appendQueryParameter("pageSize", pageSize.coerceIn(1, 100).toString())
+    .build()
+    .toString()
+
 /** Parse chapter links from the novel page or the chapter-archive fragment. */
 internal fun parseFreeWebNovelTocLinks(
     document: Document,
@@ -217,6 +230,38 @@ open class FreewebnovelProvider : MainAPI() {
 
     //used to getChapterList. It's necesary because LibRead and Freewebnovel requires different things.
     open fun getAcode(url: String): String = url.substringAfterLast("/")
+    private suspend fun getPaginatedAjaxChapters(
+        pageUrl: String,
+        pageRoot: String,
+    ): List<ChapterData> {
+        val chapters = linkedMapOf<String, ChapterData>()
+        var page = 1
+        var totalPages = 1
+
+        while (page <= totalPages && page <= MAX_TOC_PAGES) {
+            val requestUrl = buildFreeWebNovelAjaxChapterPageUrl(pageUrl, page)
+            val responseText = app.get(
+                requestUrl,
+                headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
+            ).text
+            val response = parseFreeWebNovelTocAjaxResponse(responseText)
+            if (page == 1) totalPages = response.totalPages.coerceAtMost(MAX_TOC_PAGES)
+
+            val pageChapters = parseFreeWebNovelTocLinks(
+                Jsoup.parse(response.html, pageRoot),
+                siteRoot = pageRoot,
+                includeOptions = true,
+            )
+            if (pageChapters.isEmpty()) break
+
+            pageChapters.forEach { chapter -> chapters.putIfAbsent(chapter.url, chapter) }
+            page++
+            if (page <= totalPages) kotlinx.coroutines.delay(150)
+        }
+
+        return chapters.values.toList()
+    }
+
     suspend fun getChapterList(doc: Document, url: String): List<ChapterData> {
         val pageUrl = url.substringBefore("?").substringBefore("#")
         val baseUrl = pageUrl.removeSuffix("/").removeSuffix(".html")
@@ -233,11 +278,15 @@ open class FreewebnovelProvider : MainAPI() {
             }
         }
 
-        // The official LNReader Free Web Novel source reads the article ID and
-        // total chapter count from the detail page. When a chapter count is present,
-        // it POSTs aid/acode/cid to api/chapterlist.php. The previous guessed
-        // ?ajax=chapters&page= URL was not this source's endpoint contract.
+        // First use the paginated AJAX contract used by the official LNReader
+        // ReadNovelFull multisrc source (40 chapters per page). Fetch every page:
+        // a single random-cursor request to chapterlist.php can return only a
+        // fragment and is a common reason large novels appear to have 0 chapters.
         parseTocPage(doc)
+        val paginatedChapters = runCatching {
+            getPaginatedAjaxChapters(pageUrl, pageRoot)
+        }.getOrDefault(emptyList())
+        if (paginatedChapters.isNotEmpty()) return paginatedChapters
 
         val totalChapters = extractFreeWebNovelTotalChapters(doc)
 
