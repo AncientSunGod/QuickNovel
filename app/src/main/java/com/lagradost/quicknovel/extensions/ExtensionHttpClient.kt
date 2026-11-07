@@ -14,6 +14,25 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 
+
+/**
+ * Cloudflare commonly returns 403/520 for browser challenges. Some zones return
+ * 503 instead; only treat that as a challenge when Cloudflare identifies the response.
+ * A generic origin 503 should not open a browser session unnecessarily.
+ */
+internal fun shouldAttemptCloudflareRecovery(
+    statusCode: Int,
+    serverHeader: String?,
+    cfRayHeader: String?,
+    cfMitigatedHeader: String?,
+): Boolean {
+    if (statusCode == 403 || statusCode == 520) return true
+    if (statusCode != 503) return false
+    return serverHeader?.contains("cloudflare", ignoreCase = true) == true ||
+        !cfRayHeader.isNullOrBlank() ||
+        cfMitigatedHeader?.equals("challenge", ignoreCase = true) == true
+}
+
 /**
  * Bounded HTTP helper used by the restricted extension host bridge.
  *
@@ -214,7 +233,13 @@ object ExtensionHttpClient {
                 // rather than 403. Give the same host-scoped WebView session recovery
                 // one bounded attempt; if the origin itself is unavailable, the 520
                 // response is returned unchanged after this attempt.
-                if ((status == 403 || status == 520) &&
+                val isCloudflareChallenge = shouldAttemptCloudflareRecovery(
+                    statusCode = status,
+                    serverHeader = connection.getHeaderField("Server"),
+                    cfRayHeader = connection.getHeaderField("CF-Ray"),
+                    cfMitigatedHeader = connection.getHeaderField("cf-mitigated"),
+                )
+                if (isCloudflareChallenge &&
                     isCloudflareRecoveryEnabled() &&
                     !webViewRecoveryAttempted && allowedHosts != null
                 ) {
