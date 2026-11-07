@@ -62,6 +62,41 @@ class ExtensionMainAPITest {
     }
 
     @Test
+    fun loadsPaginationAliasesAndArrayPageResponses() {
+        val bundle = File.createTempFile("quicknovel-pagination-alias-", ".js")
+        bundle.writeText("module.exports = {};")
+        try {
+            val extension = InstalledExtension(
+                id = "pagination-alias-test",
+                name = "Pagination alias test",
+                site = "https://example.com",
+                version = "1",
+                language = "English",
+                url = "https://example.com/plugin.js",
+                repositoryUrl = "https://example.com/plugins.min.json",
+                bundlePath = bundle.absolutePath,
+            )
+            val api = ExtensionMainAPI(extension) { operation, args ->
+                when (operation) {
+                    "searchNovels" -> """[{"name":"Paged Novel","path":"series"}]"""
+                    "parseNovel" -> """{"name":"Paged Novel","path":"series","totalPage":2,"chapter_list":[{"name":"Chapter 1","path":"chapter-1"}]}"""
+                    "parsePage" -> {
+                        assertEquals("2", args.getString(1))
+                        """[{"name":"Chapter 2","path":"chapter-2"}]"""
+                    }
+                    else -> null
+                }
+            }
+            val search = kotlinx.coroutines.runBlocking { api.search("paged") }!!
+            val novel = kotlinx.coroutines.runBlocking { api.load(search.first().url) }
+                as com.lagradost.quicknovel.StreamResponse
+            assertEquals(listOf("Chapter 1", "Chapter 2"), novel.data.map { it.name })
+        } finally {
+            bundle.delete()
+        }
+    }
+
+    @Test
     fun runsCurrentChikariThroughSearchDetailsAndChapterReading() {
         val source = javaClass.getResourceAsStream("/lnreader/chikari.js")!!
             .bufferedReader()
