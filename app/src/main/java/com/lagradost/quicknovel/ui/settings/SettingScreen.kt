@@ -235,6 +235,40 @@ object SettingScreen : SearchableSettings {
                 title = "Extensions",
                 preferenceItems = persistentListOf(
                     Preference.PreferenceItem.CustomPreference(
+                        title = "Cloudflare verification helper",
+                        content = {
+                            var enabled by remember {
+                                mutableStateOf(
+                                    com.lagradost.quicknovel.extensions.ExtensionHttpClient
+                                        .isCloudflareRecoveryEnabled()
+                                )
+                            }
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text("Retry blocked LNReader requests in the in-app browser")
+                                    Switch(
+                                        checked = enabled,
+                                        onCheckedChange = { value ->
+                                            enabled = value
+                                            com.lagradost.quicknovel.extensions.ExtensionHttpClient
+                                                .setCloudflareRecoveryEnabled(value)
+                                        },
+                                    )
+                                }
+                                Text(
+                                    "When a site returns a browser-verification response, QuickNovel can open its browser session once and retry with the site's returned cookies. The site still controls access.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        },
+                    ),
+                    Preference.PreferenceItem.CustomPreference(
                         title = "Extension repositories",
                         content = {
                             var repositoryDialogOpen by remember { mutableStateOf(false) }
