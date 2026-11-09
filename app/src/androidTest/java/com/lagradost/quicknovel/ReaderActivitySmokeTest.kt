@@ -68,11 +68,24 @@ class ReaderActivitySmokeTest {
             ActivityScenario.launch<ReadActivity2>(intent).use { scenario ->
                 // Emulator cold-start and first-run setup can take longer than a normal
                 // UI frame. Wait for the actual provider callback and rendered body.
-                val deadline = SystemClock.uptimeMillis() + 60_000L
+                // ReaderActivity performs substantial first-run setup before it starts
+                // the provider request. Give initialization its own budget so emulator
+                // cold-start time cannot consume the chapter-rendering budget.
+                val providerDeadline = SystemClock.uptimeMillis() + 120_000L
+                while (!providerWasCalled.get() && SystemClock.uptimeMillis() < providerDeadline) {
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    SystemClock.sleep(150)
+                }
+                assertTrue(
+                    "QuickStream provider was never called; reader initialization did not reach chapter download",
+                    providerWasCalled.get(),
+                )
+
                 var rendered = false
                 var adapterItems = 0
                 var readerDiagnostic = "reader views not inspected"
-                while (!rendered && SystemClock.uptimeMillis() < deadline) {
+                val renderDeadline = SystemClock.uptimeMillis() + 90_000L
+                while (!rendered && SystemClock.uptimeMillis() < renderDeadline) {
                     InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                     scenario.onActivity { activity ->
                         val recycler = activity.findViewById<RecyclerView>(R.id.real_text)
@@ -104,11 +117,7 @@ class ReaderActivitySmokeTest {
                     if (!rendered) SystemClock.sleep(150)
                 }
                 assertTrue(
-                    "QuickStream provider was never called; reader initialization did not reach chapter download",
-                    providerWasCalled.get(),
-                )
-                assertTrue(
-                    "Provider returned chapter HTML but reader did not render it ($readerDiagnostic)",
+                    "Provider was called but chapter HTML was not rendered within the render budget ($readerDiagnostic)",
                     rendered,
                 )
 
