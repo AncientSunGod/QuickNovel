@@ -78,9 +78,21 @@ class ReaderActivitySmokeTest {
                         val recycler = activity.findViewById<RecyclerView>(R.id.real_text)
                         if (recycler != null) {
                             adapterItems = recycler.adapter?.itemCount ?: 0
+                            val normal = activity.findViewById<View>(R.id.read_normal_layout)
+                            val loading = activity.findViewById<View>(R.id.read_loading)
+                            val failure = activity.findViewById<View>(R.id.read_fail)
+                            val failureText = activity.findViewById<TextView>(R.id.fail_text)?.text
+                            val loadingText = activity.findViewById<TextView>(R.id.loading_text)?.text
+                            val root = activity.findViewById<View>(R.id.reader_container)
                             readerDiagnostic = "adapter=$adapterItems, children=${recycler.childCount}, " +
                                 "recyclerVisibility=${recycler.visibility}, " +
-                                "recyclerMeasured=${recycler.width}x${recycler.height}"
+                                "recyclerMeasured=${recycler.width}x${recycler.height}, " +
+                                "normalVisibility=${normal?.visibility}, " +
+                                "normalMeasured=${normal?.width}x${normal?.height}, " +
+                                "loadingVisibility=${loading?.visibility}, loadingText=$loadingText, " +
+                                "failureVisibility=${failure?.visibility}, failureText=$failureText, " +
+                                "rootMeasured=${root?.width}x${root?.height}, " +
+                                "providerCalled=${providerWasCalled.get()}"
                             for (index in 0 until recycler.childCount) {
                                 if (containsText(recycler.getChildAt(index), "Reader smoke chapter body")) {
                                     rendered = true
