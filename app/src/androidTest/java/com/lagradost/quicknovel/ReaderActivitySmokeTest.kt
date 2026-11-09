@@ -71,12 +71,20 @@ class ReaderActivitySmokeTest {
                 val deadline = SystemClock.uptimeMillis() + 60_000L
                 var rendered = false
                 var adapterItems = 0
+                var readerDiagnostic = "reader views not inspected"
                 while (!rendered && SystemClock.uptimeMillis() < deadline) {
                     InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                     scenario.onActivity { activity ->
                         val recycler = activity.findViewById<RecyclerView>(R.id.real_text)
                         if (recycler != null) {
                             adapterItems = recycler.adapter?.itemCount ?: 0
+                            val failView = activity.findViewById<View>(R.id.readFail)
+                            val failText = activity.findViewById<TextView>(R.id.failText)?.text
+                            val loadingView = activity.findViewById<View>(R.id.readLoading)
+                            val loadingText = activity.findViewById<TextView>(R.id.loadingText)?.text
+                            readerDiagnostic = "adapter=$adapterItems, children=${recycler.childCount}, " +
+                                "readFail=${failView?.visibility}, failText=$failText, " +
+                                "readLoading=${loadingView?.visibility}, loadingText=$loadingText"
                             for (index in 0 until recycler.childCount) {
                                 if (containsText(recycler.getChildAt(index), "Reader smoke chapter body")) {
                                     rendered = true
@@ -92,7 +100,7 @@ class ReaderActivitySmokeTest {
                     providerWasCalled.get(),
                 )
                 assertTrue(
-                    "Provider returned chapter HTML but reader did not render it (adapter items=$adapterItems)",
+                    "Provider returned chapter HTML but reader did not render it ($readerDiagnostic)",
                     rendered,
                 )
 
