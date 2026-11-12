@@ -13,6 +13,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.lagradost.quicknovel.util.Apis
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,11 +26,20 @@ class ReaderActivitySmokeTest {
     fun quickStreamLaunchRendersAChapterFromItsRegisteredProvider() {
         val appContext = ApplicationProvider.getApplicationContext<Context>()
         val providerWasCalled = AtomicBoolean(false)
+        val nextChapterRequestStarted = AtomicBoolean(false)
+        val releaseNextChapter = CountDownLatch(1)
         val provider = object : MainAPI() {
             override val name = "QuickNovelReaderSmoke"
             override val mainUrl = "https://reader-smoke.invalid"
 
             override suspend fun loadHtml(url: String): String {
+                if (url.endsWith("/chapter-2")) {
+                    nextChapterRequestStarted.set(true)
+                    // Keep prefetch deliberately slow. Chapter one must already be visible.
+                    releaseNextChapter.await(45, TimeUnit.SECONDS)
+                    return "<p>Reader smoke next chapter body.</p>"
+                }
+
                 providerWasCalled.set(true)
                 return buildString {
                     repeat(6) { index ->
@@ -53,7 +64,12 @@ class ReaderActivitySmokeTest {
                         name = "Chapter 1",
                         url = "https://reader-smoke.invalid/chapter-1",
                         dateOfRelease = null,
-                    )
+                    ),
+                    ChapterData(
+                        name = "Chapter 2",
+                        url = "https://reader-smoke.invalid/chapter-2",
+                        dateOfRelease = null,
+                    ),
                 ),
             )
         )
@@ -84,7 +100,7 @@ class ReaderActivitySmokeTest {
                 var rendered = false
                 var adapterItems = 0
                 var readerDiagnostic = "reader views not inspected"
-                val renderDeadline = SystemClock.uptimeMillis() + 90_000L
+                val renderDeadline = SystemClock.uptimeMillis() + 30_000L
                 while (!rendered && SystemClock.uptimeMillis() < renderDeadline) {
                     InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                     scenario.onActivity { activity ->
@@ -117,9 +133,20 @@ class ReaderActivitySmokeTest {
                     if (!rendered) SystemClock.sleep(150)
                 }
                 assertTrue(
-                    "Provider was called but chapter HTML was not rendered within the render budget ($readerDiagnostic)",
+                    "Provider was called but chapter HTML was not rendered while the next chapter was still loading ($readerDiagnostic)",
                     rendered,
                 )
+
+                val prefetchDeadline = SystemClock.uptimeMillis() + 10_000L
+                while (!nextChapterRequestStarted.get() && SystemClock.uptimeMillis() < prefetchDeadline) {
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    SystemClock.sleep(100)
+                }
+                assertTrue(
+                    "The reader did not begin preloading the next chapter after displaying the current one",
+                    nextChapterRequestStarted.get(),
+                )
+                releaseNextChapter.countDown()
 
                 var progressVisible = false
                 scenario.onActivity { activity ->
@@ -148,6 +175,7 @@ class ReaderActivitySmokeTest {
                 )
             }
         } finally {
+            releaseNextChapter.countDown()
             Apis.testApisOverride = null
             QuickStreamSessionStore.release(sessionId)
         }

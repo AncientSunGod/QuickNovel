@@ -1389,13 +1389,32 @@ class ReadActivityViewModel : ViewModel() {
                         throw ErrorLoadingException("Reader received a book with no chapters.")
                     }
 
-                    updateIndexAsync(loadedChapterIndex, notify = false, postLoading = true)
+                    if (loadedChapterIndex < book.size()) {
+                        // Show the requested chapter as soon as it is ready. Waiting for
+                        // neighbouring chapters here can leave the entire reader blank when
+                        // a provider is slow or stuck on its next chapter.
+                        requested += loadedChapterIndex
+                        loadIndividualChapter(
+                            loadedChapterIndex,
+                            notify = false,
+                            postLoading = true,
+                        )
+                    } else {
+                        // Preserve dynamic-book expansion when restoring a saved index that
+                        // is beyond the source's currently known chapter list.
+                        updateIndexAsync(loadedChapterIndex, notify = false, postLoading = true)
 
-                    // Clamp a saved position if the source's chapter list has changed.
-                    if (loadedChapterIndex >= book.size()) {
-                        currentIndex = book.size() - 1
-                        updateIndexAsync(currentIndex, notify = false)
-                        showToast("Resize $loadedChapterIndex -> $currentIndex", Toast.LENGTH_LONG)
+                        // Clamp a saved position if the source's chapter list has changed.
+                        if (loadedChapterIndex >= book.size()) {
+                            currentIndex = book.size() - 1
+                            requested += currentIndex
+                            loadIndividualChapter(
+                                currentIndex,
+                                notify = false,
+                                postLoading = true,
+                            )
+                            showToast("Resize $loadedChapterIndex -> $currentIndex", Toast.LENGTH_LONG)
+                        }
                     }
 
                     val char = getKey(
@@ -1404,6 +1423,13 @@ class ReadActivityViewModel : ViewModel() {
                     val innerIndex = innerCharToIndex(currentIndex, char) ?: 0
                     changeIndex(ScrollIndex(currentIndex, innerIndex, char))
                     updateReadArea(seekToDesired = true)
+
+                    // Neighbouring chapters are preloaded only after the first chapter has
+                    // been handed to the adapter, so they cannot delay the initial render.
+                    val initialIndex = currentIndex
+                    viewModelScope.launch(Dispatchers.IO) {
+                        updateIndexAsync(initialIndex, notify = true)
+                    }
                 } catch (error: kotlinx.coroutines.CancellationException) {
                     throw error
                 } catch (error: Throwable) {
