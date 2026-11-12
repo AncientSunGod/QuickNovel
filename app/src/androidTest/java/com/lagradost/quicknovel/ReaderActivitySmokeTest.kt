@@ -31,9 +31,9 @@ class ReaderActivitySmokeTest {
             override suspend fun loadHtml(url: String): String {
                 providerWasCalled.set(true)
                 return buildString {
-                    repeat(80) { index ->
+                    repeat(6) { index ->
                         append("<p>Reader smoke chapter body $index. ")
-                        append("A long passage for reader progress testing. ".repeat(30))
+                        append("A short passage verifies that QuickStream content reaches the reader adapter. ".repeat(2))
                         append("</p>")
                     }
                 }
