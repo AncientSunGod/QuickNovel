@@ -1035,7 +1035,10 @@ class ReadActivityViewModel : ViewModel() {
         } finally {
             chapterMutex.withLock {
                 loading -= index
-                if (notify) notifyChapterUpdate(index)
+                // The first requested chapter is loaded with notify=false so nearby
+                // preloads do not repeatedly rebuild the adapter. It still must publish
+                // its completed result, otherwise the reader remains on its loading view.
+                if (notify || postLoading) notifyChapterUpdate(index)
             }
         }
     }
