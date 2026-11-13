@@ -495,13 +495,14 @@
         </com.google.android.material.appbar.AppBarLayout>
     </FrameLayout>
 
-    <!-- Root-level final overlay: remains above the reader toolbar and bottom controls. -->
+    <!-- Keep reading progress at the bottom edge, immediately above the time/battery strip. -->
     <ProgressBar
             android:id="@+id/read_overflow_progress"
             style="@style/Widget.AppCompat.ProgressBar.Horizontal"
             android:layout_width="match_parent"
             android:layout_height="5dp"
-            android:layout_gravity="top"
+            android:layout_gravity="bottom"
+            android:layout_marginBottom="25dp"
             android:visibility="gone"
             android:elevation="32dp"
             android:indeterminate="false"
