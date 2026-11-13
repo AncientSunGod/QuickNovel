@@ -160,10 +160,14 @@ class ReaderActivitySmokeTest {
                 SystemClock.sleep(500)
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                 var progressAfterScroll = 0
+                var progressInBottomSlot = false
                 scenario.onActivity { activity ->
-                    progressAfterScroll = activity
-                        .findViewById<ProgressBar>(R.id.read_overflow_progress)
-                        ?.progress ?: 0
+                    val progress = activity.findViewById<ProgressBar>(R.id.read_overflow_progress)
+                    val overlay = activity.findViewById<View>(R.id.read_overlay)
+                    val root = activity.findViewById<View>(R.id.reader_container)
+                    progressAfterScroll = progress?.progress ?: 0
+                    progressInBottomSlot = progress != null && overlay != null && root != null &&
+                        progress.top >= root.height * 0.75f && progress.bottom <= overlay.top + 1
                 }
                 assertTrue(
                     "Reader progress overlay stayed hidden after a chapter rendered",
@@ -172,6 +176,10 @@ class ReaderActivitySmokeTest {
                 assertTrue(
                     "Reader progress did not advance after scrolling (progress=$progressAfterScroll)",
                     progressAfterScroll > 0,
+                )
+                assertTrue(
+                    "Reader progress bar is not in the bottom strip above the time/battery row",
+                    progressInBottomSlot,
                 )
             }
         } finally {
