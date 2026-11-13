@@ -43,11 +43,22 @@ class FaqWikiProvider :  MainAPI() {
         return HeadMainPageResponse(mainUrl, returnValue)
     }
 
+    private fun normalizeNovelUrl(url: String): String {
+        val canonical = url.replace("faqwiki.xyz", "faqwiki.us")
+        val path = canonical.substringAfter("faqwiki.us/", "").trimStart('/')
+        if (path.isBlank()) return mainUrl
+        val novelPath = if (path.startsWith("novel/")) path else "novel/$path"
+        return "https://faqwiki.us/$novelPath"
+    }
+
     override suspend fun load(url: String): LoadResponse {
-        val document = app.get(url.replace("xyz","us/novel")).document
+        val normalizedUrl = normalizeNovelUrl(url)
+        val document = app.get(normalizedUrl).document
         val title = document.selectFirst("h1")?.text() ?: throw ErrorLoadingException("Invalid Name")
 
-        val chapters = document.select("div.entry-content ul.lcp_catlist li, div.entry-content ul li").mapNotNull { li ->
+        val chapters = document.select(
+            "div.entry-content ul.lcp_catlist li, div.entry-content ul li, article .entry-content ul li, main article ul li, .entry-content li"
+        ).mapNotNull { li ->
             val a = li.selectFirst("a") ?: return@mapNotNull null
             val name = a.text().trim()
             val href = a.attr("href")
@@ -56,7 +67,7 @@ class FaqWikiProvider :  MainAPI() {
             else return@mapNotNull null
         }
 
-        return newStreamResponse(title, url, chapters) {
+        return newStreamResponse(title, normalizedUrl, chapters) {
             this.posterUrl = document.selectFirst("figure > img, div.entry-content img")?.attr("src")
             val tags = mutableListOf<String>()
 
@@ -79,9 +90,14 @@ class FaqWikiProvider :  MainAPI() {
 
     override suspend fun loadHtml(url: String): String? {
         val document = app.get(url).document
-        val res = document.selectFirst("main > article > div")
-        res?.select("script, div")?.remove()
-        return res?.html()
+        val content = document.selectFirst("main article .entry-content")
+            ?: document.selectFirst("article .entry-content")
+            ?: document.selectFirst("main > article > div")
+            ?: document.selectFirst("main article")
+            ?: document.selectFirst("article")
+            ?: document.body()
+        content.select("script, style, iframe, noscript, nav, .sharedaddy, .jp-relatedposts").remove()
+        return content.html().trim().takeIf { it.isNotBlank() }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {

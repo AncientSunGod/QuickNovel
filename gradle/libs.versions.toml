@@ -4,6 +4,7 @@
 androidGradlePlugin = "9.2.1"
 coilComposeVersion = "3.5.0"
 kotlinGradlePlugin = "2.4.10"
+kover = "0.9.11"
 
 activity = "1.13.0"
 composeMaterial3 = "1.11.0-alpha07"
@@ -41,5 +42,6 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlinGra
 
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlinGradlePlugin" }
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 
 [bundles]

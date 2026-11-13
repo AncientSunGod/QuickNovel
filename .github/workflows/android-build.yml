@@ -3,21 +3,22 @@ name: Android debug APK
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [master, fix/lnreader-extension-compatibility]
   pull_request:
     branches: [master]
 
 permissions:
   contents: read
 
+# Share one run between a branch push and its matching pull_request event.
 concurrency:
-  group: quicknovel-android-build
+  group: quicknovel-android-build-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -29,10 +30,54 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
       - name: Run unit tests and build debug APK
-        run:  ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:koverXmlReportDebug :app:koverHtmlReportDebug :app:assembleDebug
+      - name: Upload unit test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickNovel-unit-test-diagnostics
+          path: |
+            app/build/test-results/testDebugUnitTest/
+            app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
+      - name: Upload Kotlin coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickNovel-kotlin-coverage
+          path: app/build/reports/kover/
+          if-no-files-found: warn
+      - name: Upload Android Lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickNovel-android-lint
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.txt
+            app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+          if-no-files-found: warn
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: QuickNovel-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+      - name: Run focused QuickStream reader smoke test on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        timeout-minutes: 25
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: bash .github/scripts/run-reader-smoke.sh
+      - name: Upload reader smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickNovel-reader-smoke-diagnostics
+          path: reader-smoke-diagnostics/
+          if-no-files-found: warn

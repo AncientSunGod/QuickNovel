@@ -81,6 +81,7 @@ import io.noties.markwon.image.AsyncDrawable
 import io.noties.markwon.image.AsyncDrawableSpan
 import io.noties.markwon.image.ImageSizeResolver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -205,11 +206,16 @@ abstract class AbstractBook {
 
     private var poster: Bitmap? = null
 
-    init {
-        ioSafe {
+    // Never call an overridable method from AbstractBook's constructor. At that point
+    // subclass fields (QuickBook.data / RegularBook.data) have not been initialized.
+    // The owning ViewModel invokes this after the concrete book is fully constructed.
+    fun loadPoster() = ioSafe {
+        try {
             poster = posterBytes()?.let { byteArray ->
                 BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
             }
+        } catch (error: Throwable) {
+            logError(error)
         }
     }
 
@@ -452,6 +458,76 @@ data class LiveChapterData(
     }
 }
 
+data class TextReplacementRule(
+    val find: String,
+    val replace: String,
+)
+
+private const val TEXT_REPLACEMENTS_KEY = "reader_text_replacements"
+
+/**
+ * Converts both current rule objects and legacy JSON/Jackson map values into
+ * safe reader rules. Kept pure so persisted-data migration is unit-testable.
+ */
+internal fun normalizeTextReplacementRules(stored: Any?): List<TextReplacementRule> {
+    val entries = when (stored) {
+        is Iterable<*> -> stored
+        is Map<*, *> -> listOf(stored)
+        else -> return emptyList()
+    }
+
+    return entries.mapNotNull { entry ->
+        when (entry) {
+            is TextReplacementRule -> entry
+            is Map<*, *> -> {
+                val find = (entry["find"] ?: entry["Find"]) as? String
+                val replace = (entry["replace"] ?: entry["Replace"]) as? String ?: ""
+                find?.takeIf { it.isNotBlank() }?.let { TextReplacementRule(it, replace) }
+            }
+            else -> null
+        }
+    }
+}
+
+/**
+ * Apply literal corrections to the chapter's text spans while preserving Android spans
+ * and rebuilding global character offsets. Kept pure for regression testing.
+ */
+internal fun applyTextReplacementRules(
+    rendered: Spanned,
+    input: ArrayList<TextSpan>,
+    rules: List<TextReplacementRule>,
+): Pair<Spanned, ArrayList<TextSpan>> {
+    if (rules.isEmpty()) return rendered to input
+
+    val builder = SpannableStringBuilder()
+    val output = ArrayList<TextSpan>(input.size)
+    input.forEach { original ->
+        val text = SpannableStringBuilder(original.text)
+        // Never modify image spans or their embedded drawable metadata.
+        if (text.getSpans<AsyncDrawableSpan>().isEmpty()) {
+            rules.forEach { rule ->
+                if (rule.find.isNotEmpty()) {
+                    var from = 0
+                    while (from <= text.length - rule.find.length) {
+                        val start = text.indexOf(rule.find, from, ignoreCase = true)
+                        if (start < 0) break
+                        text.replace(start, start + rule.find.length, rule.replace)
+                        from = start + rule.replace.length
+                    }
+                }
+            }
+        }
+        val start = builder.length
+        builder.append(text)
+        val end = builder.length
+        builder.append('\n')
+        output.add(TextSpan(text, start, end, original.index, original.innerIndex))
+    }
+    return builder to output
+}
+
+
 data class ChapterUpdate(
     val data: ArrayList<SpanDisplay>,
     val seekToDesired: Boolean
@@ -460,6 +536,9 @@ data class ChapterUpdate(
 class ReadActivityViewModel : ViewModel() {
     lateinit var book: AbstractBook
     private lateinit var markwon: Markwon
+
+    /** True only after the concrete book and its Markwon renderer are both ready. */
+    fun isReaderReady(): Boolean = this::book.isInitialized && this::markwon.isInitialized
     private var isInApp: Boolean = true
     private var leftAppAt: ScrollIndex? = null
     val translationManager = TranslationManager()
@@ -814,9 +893,13 @@ class ReadActivityViewModel : ViewModel() {
             if (notify) notifyChapterUpdate(index)
         }
 
-        // we check for out of bounds and if it is out of bounds then try to expand it (Reddit next)
-        // we lock it here to prevent duplicate loading when init
-        chapterExpandMutex.withLock {
+        // Keep expansion, download, parsing, and rendering under one cleanup boundary.
+        // Cancellation while waiting for the expansion mutex must not leave this chapter
+        // permanently marked as loading.
+        try {
+            // we check for out of bounds and if it is out of bounds then try to expand it (Reddit next)
+            // we lock it here to prevent duplicate loading when init
+            chapterExpandMutex.withLock {
             val preSize = book.size()
             while (index >= book.size()) {
                 // will only expand once per session per chapter
@@ -827,6 +910,7 @@ class ReadActivityViewModel : ViewModel() {
                     // we assume that the text is cached
                     book.expand(book.getChapterData(book.size() - 1, reload = false))
                 } catch (t: Throwable) {
+                    if (t is kotlinx.coroutines.CancellationException) throw t
                     logError(t)
                 }
             }
@@ -846,8 +930,6 @@ class ReadActivityViewModel : ViewModel() {
                 } else {
                     chapterData[index] = null
                 }
-                loading -= index
-                if (notify) notifyChapterUpdate(index)
             }
             return
         }
@@ -859,7 +941,6 @@ class ReadActivityViewModel : ViewModel() {
         }
 
         // load the data and precalculate everything needed
-        try {
             val data = safeApiCall {
                 book.getChapterData(index, reload)
             }.map { text ->
@@ -913,6 +994,13 @@ class ReadActivityViewModel : ViewModel() {
                         rendered = mlRender
                         spans = mlSpans
                     }
+
+                    // Apply user corrections after optional machine translation so rules can
+                    // repair recurring MTL wording while keeping all text styling spans intact.
+                    applyTextReplacements(rendered, spans).let { (replacedRender, replacedSpans) ->
+                        rendered = replacedRender
+                        spans = replacedSpans
+                    }
                 }
 
                 LiveChapterData(
@@ -931,14 +1019,26 @@ class ReadActivityViewModel : ViewModel() {
                 chapterData[index] = data
             }
         } catch (t: Throwable) {
-            // Tasks.await may throw
+            if (t is kotlinx.coroutines.CancellationException) {
+                // A cancelled request must be retryable; leaving Resource.Loading cached
+                // makes later navigation think the chapter is already loaded.
+                chapterMutex.withLock { chapterData[index] = null }
+                throw t
+            }
+            // Keep the original exception: a chapter/provider failure should be diagnosable
+            // instead of silently becoming an unexplained empty reader.
+            context?.let { CrashLog.recordNonFatal(it, "Reader chapter load", t) }
+            logError(t)
             chapterMutex.withLock {
                 chapterData[index] = throwableToResource(t)
             }
         } finally {
             chapterMutex.withLock {
                 loading -= index
-                if (notify) notifyChapterUpdate(index)
+                // The first requested chapter is loaded with notify=false so nearby
+                // preloads do not repeatedly rebuild the adapter. It still must publish
+                // its completed result, otherwise the reader remains on its loading view.
+                if (notify || postLoading) notifyChapterUpdate(index)
             }
         }
     }
@@ -971,6 +1071,70 @@ class ReadActivityViewModel : ViewModel() {
         return builder to out
     }
 
+
+
+    fun getTextReplacements(): List<TextReplacementRule> {
+        // Preferences written through Jackson can be read back as
+        // ArrayList<LinkedHashMap<String, Any>> because the generic element type
+        // is erased. Never cast those map values directly to TextReplacementRule.
+        val stored: Any? = getKey<Any>(TEXT_REPLACEMENTS_KEY)
+        val rules = normalizeTextReplacementRules(stored)
+
+        // Migrate legacy map-backed values to the current typed representation.
+        if (stored is Map<*, *> || (stored is Iterable<*> && stored.any { it is Map<*, *> })) {
+            setKey(TEXT_REPLACEMENTS_KEY, rules)
+        }
+        return rules
+    }
+
+    fun saveTextReplacements(rules: List<TextReplacementRule>) {
+        val cleaned = rules.filter { it.find.isNotBlank() }
+        setKey(TEXT_REPLACEMENTS_KEY, cleaned)
+
+        // Re-render the chapter currently on screen from the cached book text.
+        // Wait for an in-flight chapter load to finish first: loadIndividualChapter()
+        // deliberately ignores duplicate requests while an index is marked as loading.
+        val targetIndex = desiredIndex?.index ?: currentIndex
+        if (::book.isInitialized && targetIndex >= 0) {
+            val sourceName = (book as? QuickBook)?.data?.meta?.apiName ?: "Local EPUB"
+            CrashLog.updateContext(
+                "Text replacement rerender; source=$sourceName; rules=${cleaned.size}; chapter=$targetIndex"
+            )
+            ioSafe {
+                try {
+                    while (chapterMutex.withLock { loading.contains(targetIndex) }) {
+                        delay(40)
+                    }
+                    loadIndividualChapter(
+                        targetIndex,
+                        reload = false,
+                        notify = true,
+                        reTranslate = true,
+                    )
+                    updateReadArea(seekToDesired = false)
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    context?.let {
+                        CrashLog.recordNonFatal(it, "Text replacement re-render", error)
+                    }
+                    logError(error)
+                    _loadingStatus.postValue(
+                        Resource.Failure(
+                            error,
+                            error.message ?: "Could not apply text replacements. The diagnostic log was saved."
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun applyTextReplacements(
+        rendered: Spanned,
+        input: ArrayList<TextSpan>
+    ): Pair<Spanned, ArrayList<TextSpan>> =
+        applyTextReplacementRules(rendered, input, getTextReplacements())
 
     @Throws(MLException::class)
     private suspend fun translate(
@@ -1129,97 +1293,158 @@ class ReadActivityViewModel : ViewModel() {
         }
     }
 
-    fun init(intent: Intent?, context: ReadActivity2) = ioSafe {
-        _loadingStatus.postValue(Resource.Loading())
-        initTTSSession(context)
+    private var readerInitializationKey: String? = null
+    private var readerInitializationJob: Job? = null
+
+    /**
+     * Reader initialization belongs to this ViewModel, not a detached global IO scope.
+     * A configuration change reuses the ViewModel and must not start a second load of
+     * the same QuickStream while the previous one is still building the chapter adapter.
+     */
+    fun init(intent: Intent?, context: ReadActivity2) {
+        val appContext = context.applicationContext
+        val sessionId = intent?.getStringExtra(QUICK_STREAM_SESSION_EXTRA)
+        val initializationKey = sessionId?.let { "session:$it" }
+            ?: intent?.data?.toString()
+            ?: "intent:${intent?.type ?: "empty"}"
+
+        synchronized(this) {
+            if (
+                readerInitializationKey == initializationKey &&
+                (readerInitializationJob?.isActive == true || isReaderReady())
+            ) {
+                return
+            }
+            readerInitializationKey = initializationKey
+            readerInitializationJob = viewModelScope.launch(Dispatchers.IO) {
+                _loadingStatus.postValue(Resource.Loading())
+                initTTSSession(appContext)
 
         val loadedBook = safeApiCall {
             if (intent == null) throw ErrorLoadingException("No intent")
 
-            val data = intent.data ?: throw ErrorLoadingException("Empty intent")
-            val isFromEpub = intent.type != "quickstream"
+            val sessionId = intent.getStringExtra(QUICK_STREAM_SESSION_EXTRA)
+            val isQuickStream = intent.type == "quickstream" || !sessionId.isNullOrBlank()
+            val inProcessQuickStream = QuickStreamSessionStore.get(sessionId)
 
-            val epub = if (isFromEpub) {
-                val fd = context.contentResolver.openFileDescriptor(data, "r")
-                    ?: throw ErrorLoadingException("Unable to open file descriptor")
-                val zipFile = AndroidZipFile(fd, "")
-                val book = EpubReader().readEpubLazy(zipFile, "utf-8")
-                RegularBook(book)
-            } else {
-                val input = context.contentResolver.openInputStream(data)
-                    ?: throw ErrorLoadingException("Empty data")
-                QuickBook(DataStore.mapper.readValue(input.reader().readText()))
+            val loaded = when {
+                inProcessQuickStream != null -> {
+                    QuickBook(inProcessQuickStream)
+                }
+
+                isQuickStream -> {
+                    // Legacy / process-recreation fallback: older intents carry only a
+                    // FileProvider URI containing the serialized QuickStream manifest.
+                    val data = intent.data ?: throw ErrorLoadingException(
+                        "QuickStream session expired and no recovery manifest was attached."
+                    )
+                    val input = appContext.contentResolver.openInputStream(data)
+                        ?: throw ErrorLoadingException("Unable to open QuickStream recovery manifest")
+                    val manifest = input.bufferedReader().use { it.readText() }
+                    val quickStream = DataStore.mapper.readValue<QuickStreamData>(manifest)
+                    QuickBook(quickStream)
+                }
+
+                else -> {
+                    val data = intent.data ?: throw ErrorLoadingException("Empty EPUB intent")
+                    val fd = appContext.contentResolver.openFileDescriptor(data, "r")
+                        ?: throw ErrorLoadingException("Unable to open file descriptor")
+                    val zipFile = AndroidZipFile(fd, "")
+                    val epub = EpubReader().readEpubLazy(zipFile, "utf-8")
+                    RegularBook(epub)
+                }
             }
 
-            if (epub.size() <= 0) {
+            if (loaded.size() <= 0) {
                 throw ErrorLoadingException("Empty book, failed to parse ${intent.type}")
             }
-            epub
+            loaded
         }
 
         when (loadedBook) {
             is Resource.Success -> {
-                init(loadedBook.value, context)
+                try {
+                    init(loadedBook.value, appContext)
 
-                initMLFromSettings(mlSettings, false)
+                    initMLFromSettings(mlSettings, false)
 
-                // cant assume we know a chapter max as it can expand
+                    // The same reader is used for downloaded EPUBs, built-in providers,
+                    // and imported extensions. Keep the complete hand-off inside this
+                    // error boundary so malformed manifests or renderer setup failures
+                    // become a visible reader error instead of taking down the Activity.
 
-                val desiredChapterName = getKey<String>(EPUB_CURRENT_POSITION_CHAPTER, book.title())
-                val desiredChapterIndex =
-                    (0 until book.size()).firstOrNull {
-                        loadedBook.value.getChapterTitle(it)
-                            .asStringNull(context) == desiredChapterName
-                    } ?: getKey<Int>(EPUB_CURRENT_POSITION, book.title()) ?: 0
-                val loadedChapterIndex =
-                    maxOf(desiredChapterIndex, 0)
+                    val desiredChapterName = getKey<String>(EPUB_CURRENT_POSITION_CHAPTER, book.title())
+                    val desiredChapterIndex =
+                        (0 until book.size()).firstOrNull {
+                            loadedBook.value.getChapterTitle(it)
+                                .asStringNull(appContext) == desiredChapterName
+                        } ?: getKey<Int>(EPUB_CURRENT_POSITION, book.title()) ?: 0
+                    val loadedChapterIndex = maxOf(desiredChapterIndex, 0)
 
-                // we the current loaded thing here, but because loadedChapter can be >= book.size (expand) we have to check
-                if (loadedChapterIndex < book.size()) {
-                    _loadingStatus.postValue(
-                        Resource.Loading(
-                            book.getLoadingStatus(
-                                loadedChapterIndex
-                            )
+                    if (loadedChapterIndex < book.size()) {
+                        _loadingStatus.postValue(
+                            Resource.Loading(book.getLoadingStatus(loadedChapterIndex))
                         )
-                    )
-                }
+                    }
 
-                currentIndex = loadedChapterIndex
-                updateIndexAsync(loadedChapterIndex, notify = false, postLoading = true)
+                    currentIndex = loadedChapterIndex
+                    if (book.size() <= 0) {
+                        throw ErrorLoadingException("Reader received a book with no chapters.")
+                    }
 
-                if (book.size() <= 0) {
+                    if (loadedChapterIndex < book.size()) {
+                        // Show the requested chapter as soon as it is ready. Waiting for
+                        // neighbouring chapters here can leave the entire reader blank when
+                        // a provider is slow or stuck on its next chapter.
+                        requested += loadedChapterIndex
+                        loadIndividualChapter(
+                            loadedChapterIndex,
+                            notify = false,
+                            postLoading = true,
+                        )
+                    } else {
+                        // Preserve dynamic-book expansion when restoring a saved index that
+                        // is beyond the source's currently known chapter list.
+                        updateIndexAsync(loadedChapterIndex, notify = false, postLoading = true)
+
+                        // Clamp a saved position if the source's chapter list has changed.
+                        if (loadedChapterIndex >= book.size()) {
+                            currentIndex = book.size() - 1
+                            requested += currentIndex
+                            loadIndividualChapter(
+                                currentIndex,
+                                notify = false,
+                                postLoading = true,
+                            )
+                            showToast("Resize $loadedChapterIndex -> $currentIndex", Toast.LENGTH_LONG)
+                        }
+                    }
+
+                    val char = getKey(
+                        EPUB_CURRENT_POSITION_SCROLL_CHAR, book.title()
+                    ) ?: 0
+                    val innerIndex = innerCharToIndex(currentIndex, char) ?: 0
+                    changeIndex(ScrollIndex(currentIndex, innerIndex, char))
+                    updateReadArea(seekToDesired = true)
+
+                    // Neighbouring chapters are preloaded only after the first chapter has
+                    // been handed to the adapter, so they cannot delay the initial render.
+                    val initialIndex = currentIndex
+                    viewModelScope.launch(Dispatchers.IO) {
+                        updateIndexAsync(initialIndex, notify = true)
+                    }
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    logError(error)
                     _loadingStatus.postValue(
                         Resource.Failure(
-                            null,
-                            "Invalid chapter data when trying to load chapter $loadedChapterIndex when the book only has ${book.size()} chapters"
+                            error,
+                            error.message ?: "The reader could not initialize this book."
                         )
                     )
-                    return@ioSafe
+                    return@launch
                 }
-
-                // if we are reading a book that sub/resize for some reason, this will clamp it into the correct range
-                if (loadedChapterIndex >= book.size()) {
-                    currentIndex = book.size() - 1
-                    updateIndexAsync(currentIndex, notify = false)
-                    showToast("Resize $loadedChapterIndex -> $currentIndex", Toast.LENGTH_LONG)
-                }
-
-                val char = getKey(
-                    EPUB_CURRENT_POSITION_SCROLL_CHAR, book.title()
-                ) ?: 0
-
-                val innerIndex = innerCharToIndex(currentIndex, char) ?: 0
-
-                // don't update as you want to seek on update
-                changeIndex(ScrollIndex(currentIndex, innerIndex, char))
-
-                // notify once because initial load is 3 chapters I don't care about 10 notifications when the user cant see it
-                updateReadArea(seekToDesired = true)
-
-                /*_loadingStatus.postValue(
-                    Resource.Success(true)
-                )*/
             }
 
             is Resource.Failure -> {
@@ -1232,11 +1457,17 @@ class ReadActivityViewModel : ViewModel() {
             }
 
             else -> throw NotImplementedError()
+                }
+            }
         }
     }
 
     fun init(book: AbstractBook, context: Context) {
         this.book = book
+        val sourceName = (book as? QuickBook)?.data?.meta?.apiName ?: "Local EPUB"
+        CrashLog.updateContext(
+            "Reader active; source=$sourceName; textReplacementRules=${getTextReplacements().size}"
+        )
         _title.postValue(book.title())
 
         updateChapters()
@@ -1279,6 +1510,10 @@ class ReadActivityViewModel : ViewModel() {
             })
             .usePlugin(SoftBreakAddsNewLinePlugin.create())
             .build()
+
+        // Start artwork loading only after QuickBook / RegularBook construction and
+        // renderer initialization are complete.
+        book.loadPoster()
         //reducer = MarkwonReducer.directChildren()
     }
 

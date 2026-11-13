@@ -39,7 +39,6 @@ import com.lagradost.quicknovel.BookDownloader2.openQuickStream
 import com.lagradost.quicknovel.BookDownloader2Helper.IMPORT_SOURCE
 import com.lagradost.quicknovel.BookDownloader2Helper.IMPORT_SOURCE_PDF
 import com.lagradost.quicknovel.BookDownloader2Helper.checkWrite
-import com.lagradost.quicknovel.BookDownloader2Helper.createQuickStream
 import com.lagradost.quicknovel.BookDownloader2Helper.requestRW
 import com.lagradost.quicknovel.CommonActivity.activity
 import com.lagradost.quicknovel.CommonActivity.showToast
@@ -221,20 +220,16 @@ class MainActivity : AppCompatActivity() {
             RedditProvider.getName(url)?.let { name ->
                 try {
                     Coroutines.main {
-                        val uri = withContext(Dispatchers.IO) {
-                            createQuickStream(
-                                QuickStreamData(
-                                    QuickStreamMetaData(
-                                        "Not found",
-                                        name,
-                                        reddit.name,
-                                    ),
-                                    null,
-                                    mutableListOf(ChapterData("Single Post", url, null, null))
-                                )
-                            )
-                        }
-                        openQuickStream(uri)
+                        val quickStream = QuickStreamData(
+                            QuickStreamMetaData(
+                                "Not found",
+                                name,
+                                reddit.name,
+                            ),
+                            null,
+                            mutableListOf(ChapterData("Single Post", url, null, null))
+                        )
+                        openQuickStream(quickStream)
                     }
                 } catch (e: Exception) {
                     logError(e)

@@ -24,6 +24,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Column
@@ -57,7 +60,9 @@ import com.lagradost.cloudstream4.theme.CloudStreamPrimaryColor
 import com.lagradost.cloudstream4.theme.modeToTheme
 import com.lagradost.cloudstream4.theme.perfToColor
 import com.lagradost.cloudstream4.theme.perfToMode
+import com.lagradost.quicknovel.CrashLog
 import com.lagradost.quicknovel.BuildConfig
+import com.lagradost.quicknovel.APIRepository
 import com.lagradost.quicknovel.CommonActivity.activity
 import com.lagradost.quicknovel.CommonActivity.showToast
 import com.lagradost.quicknovel.ErrorLoadingException
@@ -67,6 +72,11 @@ import com.lagradost.quicknovel.R
 import com.lagradost.quicknovel.mvvm.logError
 import com.lagradost.quicknovel.ui.txt
 import com.lagradost.quicknovel.util.Apis.Companion.apis
+import com.lagradost.quicknovel.util.Apis.Companion.getApiSettings
+import com.lagradost.quicknovel.util.Apis.Companion.getInstalledExtensionProviderInfo
+import com.lagradost.quicknovel.extensions.ExtensionSettingsManager
+import com.lagradost.quicknovel.extensions.ExtensionSetting
+import com.lagradost.quicknovel.extensions.InstalledExtension
 import com.lagradost.quicknovel.util.AppUtils.openInBrowser
 import com.lagradost.quicknovel.util.BackupUtils
 import com.lagradost.quicknovel.util.InAppUpdater.Companion.runAutoUpdate
@@ -225,6 +235,40 @@ object SettingScreen : SearchableSettings {
                 title = "Extensions",
                 preferenceItems = persistentListOf(
                     Preference.PreferenceItem.CustomPreference(
+                        title = "Cloudflare verification helper",
+                        content = {
+                            var enabled by remember {
+                                mutableStateOf(
+                                    com.lagradost.quicknovel.extensions.ExtensionHttpClient
+                                        .isCloudflareRecoveryEnabled()
+                                )
+                            }
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text("Retry blocked LNReader requests in the in-app browser")
+                                    Switch(
+                                        checked = enabled,
+                                        onCheckedChange = { value ->
+                                            enabled = value
+                                            com.lagradost.quicknovel.extensions.ExtensionHttpClient
+                                                .setCloudflareRecoveryEnabled(value)
+                                        },
+                                    )
+                                }
+                                Text(
+                                    "When a site returns a browser-verification response, QuickNovel can open its browser session once and retry with the site's returned cookies. The site still controls access.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        },
+                    ),
+                    Preference.PreferenceItem.CustomPreference(
                         title = "Extension repositories",
                         content = {
                             var repositoryDialogOpen by remember { mutableStateOf(false) }
@@ -234,7 +278,48 @@ object SettingScreen : SearchableSettings {
                             var installedExtensions by remember { mutableStateOf(com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)) }
                             var repositoryStatus by remember { mutableStateOf("Add an LNReader-compatible repository manifest URL.") }
                             var repositoryRefreshing by remember { mutableStateOf(false) }
+                            var extensionSearchQuery by remember { mutableStateOf("") }
                             var pendingExtensionInstall by remember { mutableStateOf<com.lagradost.quicknovel.extensions.ExtensionListing?>(null) }
+                            var pendingExtensionSettings by remember { mutableStateOf<InstalledExtension?>(null) }
+                            var pluginSettings by remember { mutableStateOf(emptyList<ExtensionSetting>()) }
+                            var pluginSettingsLoading by remember { mutableStateOf(false) }
+                            var pluginSettingsSaving by remember { mutableStateOf(false) }
+                            var pluginSettingsStatus by remember { mutableStateOf("") }
+                            val filteredExtensionListings = extensionListings.filter { entry ->
+                                val query = extensionSearchQuery.trim()
+                                query.isBlank() ||
+                                    entry.name.contains(query, ignoreCase = true) ||
+                                    entry.site.contains(query, ignoreCase = true) ||
+                                    entry.language.contains(query, ignoreCase = true) ||
+                                    entry.id.contains(query, ignoreCase = true)
+                            }
+
+                            fun openPluginSettings(extension: InstalledExtension) {
+                                pendingExtensionSettings = extension
+                                pluginSettings = emptyList()
+                                pluginSettingsStatus = ""
+                                pluginSettingsLoading = true
+                                scope.launch {
+                                    val result = withContext(Dispatchers.IO) {
+                                        ExtensionSettingsManager.getSettings(context, extension)
+                                    }
+                                    result.onSuccess { entries ->
+                                        pluginSettings = entries
+                                        if (entries.isEmpty()) {
+                                            pluginSettingsStatus = "This extension does not declare configurable settings."
+                                        }
+                                    }.onFailure { error ->
+                                        pluginSettingsStatus = error.message ?: "Could not load extension settings."
+                                    }
+                                    pluginSettingsLoading = false
+                                }
+                            }
+
+                            fun updatePluginSetting(key: String, value: Any?) {
+                                pluginSettings = pluginSettings.map { setting ->
+                                    if (setting.key == key) setting.copy(value = value) else setting
+                                }
+                            }
 
                             fun refreshExtensionCatalog() {
                                 repositoryRefreshing = true
@@ -244,7 +329,12 @@ object SettingScreen : SearchableSettings {
                                     }
                                     result.onSuccess { entries ->
                                         extensionListings = entries
-                                        repositoryStatus = "Loaded ${entries.size} extension listings. Compatibility is partial: some plugins may fail if they require unsupported LNReader modules."
+                                        val warning = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.lastRefreshWarning
+                                        repositoryStatus = if (warning == null) {
+                                            "Loaded ${entries.size} extension listings. Compatibility is partial: some plugins may fail if they require unsupported LNReader modules."
+                                        } else {
+                                            "Loaded ${entries.size} extension listings, but one or more repositories failed: ${warning}"
+                                        }
                                     }.onFailure { error ->
                                         repositoryStatus = error.message ?: "Could not refresh repositories."
                                     }
@@ -325,13 +415,49 @@ object SettingScreen : SearchableSettings {
                                                 }
                                             }
                                             item {
-                                                Text("Available extensions (${extensionListings.size})", style = MaterialTheme.typography.titleSmall)
-                                            }
-                                            item {
                                                 Text("Installed bundles (${installedExtensions.size})", style = MaterialTheme.typography.titleSmall)
                                                 Text("Installed extensions are registered as providers, but compatibility is partial. Unsupported imports may cause search or reading to fail.", style = MaterialTheme.typography.bodySmall)
                                             }
-                                            items(extensionListings.take(30)) { entry ->
+                                            items(installedExtensions) { installed ->
+                                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text(installed.name, style = MaterialTheme.typography.bodyMedium)
+                                                    Text("${installed.site} · ${installed.language} · ${installed.version}", style = MaterialTheme.typography.bodySmall)
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                        if (installed.hasSettings) {
+                                                            TextButton(onClick = { openPluginSettings(installed) }) { Text("Settings") }
+                                                        }
+                                                        TextButton(onClick = {
+                                                            val removedProvider = getInstalledExtensionProviderInfo(context)
+                                                                .firstOrNull { it.id == installed.id }
+                                                            val removed = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.uninstall(context, installed.id)
+                                                            installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
+                                                            if (removed) {
+                                                                removedProvider?.let { provider ->
+                                                                    settings.provider.searchProvidersList.set(
+                                                                        settings.provider.searchProvidersList.get() - provider.name
+                                                                    )
+                                                                }
+                                                                APIRepository.providersActive = context.getApiSettings()
+                                                                com.lagradost.quicknovel.extensions.ExtensionProviderRegistry.notifyChanged()
+                                                                repositoryStatus = "${installed.name} uninstalled. Providers refreshed."
+                                                            } else {
+                                                                repositoryStatus = "Could not uninstall ${installed.name}."
+                                                            }
+                                                        }) { Text("Uninstall") }
+                                                    }
+                                                }
+                                            }
+                                            item {
+                                                Text("Available extensions (${filteredExtensionListings.size} of ${extensionListings.size})", style = MaterialTheme.typography.titleSmall)
+                                                OutlinedTextField(
+                                                    value = extensionSearchQuery,
+                                                    onValueChange = { extensionSearchQuery = it },
+                                                    label = { Text("Search extensions by name, site, ID or language") },
+                                                    singleLine = true,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                            items(filteredExtensionListings) { entry ->
                                                 val installed = installedExtensions.firstOrNull { it.id == entry.id }
                                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                                     Text(entry.name, style = MaterialTheme.typography.bodyMedium)
@@ -342,23 +468,143 @@ object SettingScreen : SearchableSettings {
                                                             enabled = !repositoryRefreshing
                                                         ) { Text(if (installed == null) "Install" else "Update") }
                                                         if (installed != null) {
-                                                            TextButton(onClick = {
-                                                                val removed = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.uninstall(context, entry.id)
-                                                                installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
-                                                                repositoryStatus = if (removed) "${entry.name} uninstalled." else "Could not uninstall ${entry.name}."
-                                                            }) { Text("Uninstall") }
                                                             Text("Installed", style = MaterialTheme.typography.bodySmall)
                                                         }
                                                     }
                                                 }
                                             }
-                                            if (extensionListings.size > 30) {
-                                                item { Text("Showing first 30 entries.", style = MaterialTheme.typography.bodySmall) }
+                                            if (filteredExtensionListings.isEmpty() && extensionListings.isNotEmpty()) {
+                                                item { Text("No extensions match this search.", style = MaterialTheme.typography.bodySmall) }
                                             }
                                         }
                                     },
                                     confirmButton = {
                                         TextButton(onClick = { repositoryDialogOpen = false }) { Text("Done") }
+                                    }
+                                )
+                            }
+                            if (pendingExtensionSettings != null) {
+                                val settingsExtension = pendingExtensionSettings!!
+                                AlertDialog(
+                                    onDismissRequest = {
+                                        if (!pluginSettingsSaving) pendingExtensionSettings = null
+                                    },
+                                    title = { Text("${settingsExtension.name} settings") },
+                                    text = {
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            when {
+                                                pluginSettingsLoading -> Text("Loading plugin settings…")
+                                                pluginSettings.isEmpty() -> Text(pluginSettingsStatus.ifBlank { "No settings are declared by this extension." })
+                                                else -> LazyColumn(
+                                                    modifier = Modifier.fillMaxWidth().height(360.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                                ) {
+                                                    items(pluginSettings, key = { it.key }) { setting ->
+                                                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                            Text(setting.label, style = MaterialTheme.typography.titleSmall)
+                                                            when (setting.type) {
+                                                                "Switch" -> Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                                ) {
+                                                                    Text(if (setting.value == true) "Enabled" else "Disabled")
+                                                                    Switch(
+                                                                        checked = setting.value == true,
+                                                                        onCheckedChange = { value -> updatePluginSetting(setting.key, value) }
+                                                                    )
+                                                                }
+                                                                "Select" -> {
+                                                                    if (setting.options.isEmpty()) {
+                                                                        Text("No options are available for this setting.")
+                                                                    } else {
+                                                                        setting.options.forEach { option ->
+                                                                            Row(
+                                                                                modifier = Modifier.fillMaxWidth(),
+                                                                                horizontalArrangement = Arrangement.Start
+                                                                            ) {
+                                                                                RadioButton(
+                                                                                    selected = setting.value == option.value,
+                                                                                    onClick = { updatePluginSetting(setting.key, option.value) }
+                                                                                )
+                                                                                Text(option.label, modifier = Modifier.padding(top = 12.dp))
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                "CheckboxGroup" -> {
+                                                                    val selected = (setting.value as? List<*>)
+                                                                        ?.filterIsInstance<String>().orEmpty()
+                                                                    if (setting.options.isEmpty()) {
+                                                                        Text("No options are available for this setting.")
+                                                                    } else {
+                                                                        setting.options.forEach { option ->
+                                                                            Row(
+                                                                                modifier = Modifier.fillMaxWidth(),
+                                                                                horizontalArrangement = Arrangement.Start
+                                                                            ) {
+                                                                                Checkbox(
+                                                                                    checked = option.value in selected,
+                                                                                    onCheckedChange = { checked ->
+                                                                                        val updated = if (checked) {
+                                                                                            (selected + option.value).distinct()
+                                                                                        } else {
+                                                                                            selected - option.value
+                                                                                        }
+                                                                                        updatePluginSetting(setting.key, updated)
+                                                                                    }
+                                                                                )
+                                                                                Text(option.label, modifier = Modifier.padding(top = 12.dp))
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                                else -> OutlinedTextField(
+                                                                    value = setting.value as? String ?: "",
+                                                                    onValueChange = { value -> updatePluginSetting(setting.key, value) },
+                                                                    label = { Text(setting.label) },
+                                                                    singleLine = true,
+                                                                    modifier = Modifier.fillMaxWidth()
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if (pluginSettingsStatus.isNotBlank() && pluginSettings.isNotEmpty()) {
+                                                Text(pluginSettingsStatus, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                        }
+                                    },
+                                    confirmButton = {
+                                        TextButton(
+                                            enabled = !pluginSettingsLoading && !pluginSettingsSaving && pluginSettings.isNotEmpty(),
+                                            onClick = {
+                                                pluginSettingsSaving = true
+                                                pluginSettingsStatus = ""
+                                                scope.launch {
+                                                    val result = withContext(Dispatchers.IO) {
+                                                        ExtensionSettingsManager.saveSettings(
+                                                            context,
+                                                            settingsExtension,
+                                                            pluginSettings
+                                                        )
+                                                    }
+                                                    result.onSuccess {
+                                                        pendingExtensionSettings = null
+                                                        pluginSettingsStatus = ""
+                                                    }.onFailure { error ->
+                                                        pluginSettingsStatus = error.message ?: "Could not save extension settings."
+                                                    }
+                                                    pluginSettingsSaving = false
+                                                }
+                                            }
+                                        ) { Text(if (pluginSettingsSaving) "Saving…" else "Save") }
+                                    },
+                                    dismissButton = {
+                                        TextButton(
+                                            enabled = !pluginSettingsSaving,
+                                            onClick = { pendingExtensionSettings = null }
+                                        ) { Text("Cancel") }
                                     }
                                 )
                             }
@@ -383,7 +629,16 @@ object SettingScreen : SearchableSettings {
                                                 }
                                                 result.onSuccess {
                                                     installedExtensions = com.lagradost.quicknovel.extensions.ExtensionRepositoryManager.getInstalledExtensions(context)
-                                                    repositoryStatus = "${entry.name} installed. It is now available as a provider; compatibility depends on the plugin's module imports."
+                                                    val extensionProviders = getInstalledExtensionProviderInfo(context)
+                                                    settings.provider.searchProvidersList.set(
+                                                        settings.provider.searchProvidersList.get() + extensionProviders.map { it.name }
+                                                    )
+                                                    settings.provider.searchLangList.set(
+                                                        settings.provider.searchLangList.get() + extensionProviders.map { it.lang }
+                                                    )
+                                                    APIRepository.providersActive = context.getApiSettings()
+                                                    com.lagradost.quicknovel.extensions.ExtensionProviderRegistry.notifyChanged()
+                                                    repositoryStatus = "${entry.name} installed. Providers refreshed."
                                                 }.onFailure { error ->
                                                     repositoryStatus = error.message ?: "Could not install ${entry.name}."
                                                 }
@@ -630,6 +885,7 @@ fun LogcatDialog(dismiss: () -> Unit) {
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val crashReport = remember { CrashLog.latestReport(context)?.readText().orEmpty() }
     AlertDialog(
         containerColor = MaterialTheme.colorScheme.background,
         onDismissRequest = dismiss,
@@ -638,6 +894,14 @@ fun LogcatDialog(dismiss: () -> Unit) {
         },
         text = {
             LazyColumn {
+                if (crashReport.isNotBlank()) {
+                    item {
+                        Text(
+                            text = "Saved crash report (copy this when reporting a reader crash):\\n\\n$crashReport",
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                }
                 items(items = list.value) { item ->
                     LogcatItem(item)
                 }
@@ -685,6 +949,14 @@ fun LogcatDialog(dismiss: () -> Unit) {
                     }
                 }
             )
+            if (crashReport.isNotBlank()) {
+                WhiteButton(
+                    text = "Copy crash report",
+                    onClick = {
+                        clipboardHelper(txt("QuickNovel crash report"), crashReport)
+                    }
+                )
+            }
             WhiteButton(
                 text = stringResource(R.string.copylog),
                 onClick = {

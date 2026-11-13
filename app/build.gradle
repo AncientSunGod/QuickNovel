@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kover)
 }
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
@@ -8,6 +9,12 @@ apply plugin: 'kotlin-kapt'
 apply(plugin: "org.jetbrains.kotlin.plugin.compose")
 
 android {
+    // Keep the existing lint backlog visible in CI without preventing debug
+    // APK creation. New and existing findings are uploaded as a CI report.
+    lint {
+        abortOnError false
+    }
+
     compileSdkVersion 37
     //buildToolsVersion "30.0.3"
 
@@ -26,8 +33,8 @@ android {
         applicationId "com.lagradost.quicknovel"
         minSdkVersion 23
         targetSdkVersion 37
-        versionCode 56
-        versionName "3.8.0"
+        versionCode 57
+        versionName "3.8.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -87,6 +94,8 @@ dependencies {
     implementation 'androidx.work:work-runtime-ktx:2.10.0'
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+    androidTestImplementation 'androidx.test:core:1.7.0'
+    androidTestImplementation 'androidx.test:runner:1.7.0'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.7.0'
 
     //noinspection NewerVersionAvailable
@@ -142,4 +151,17 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.activity.compose)
     implementation(libs.kotlinx.io.core)
+}
+
+
+// Keep full JavaScript runtime causes in CI output and preserve XML/HTML reports
+// for failed extension compatibility tests.
+tasks.withType(Test).configureEach {
+    testLogging {
+        events "failed"
+        exceptionFormat "full"
+        showExceptions true
+        showCauses true
+        showStackTraces true
+    }
 }

@@ -1,0 +1,199 @@
+package com.lagradost.quicknovel
+
+import android.content.Context
+import android.content.Intent
+import android.os.SystemClock
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
+import android.widget.ProgressBar
+import androidx.recyclerview.widget.RecyclerView
+import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.lagradost.quicknovel.util.Apis
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class ReaderActivitySmokeTest {
+    @Test
+    fun quickStreamLaunchRendersAChapterFromItsRegisteredProvider() {
+        val appContext = ApplicationProvider.getApplicationContext<Context>()
+        val providerWasCalled = AtomicBoolean(false)
+        val nextChapterRequestStarted = AtomicBoolean(false)
+        val releaseNextChapter = CountDownLatch(1)
+        val provider = object : MainAPI() {
+            override val name = "QuickNovelReaderSmoke"
+            override val mainUrl = "https://reader-smoke.invalid"
+
+            override suspend fun loadHtml(url: String): String {
+                if (url.endsWith("/chapter-2")) {
+                    nextChapterRequestStarted.set(true)
+                    // Keep prefetch deliberately slow. Chapter one must already be visible.
+                    releaseNextChapter.await(45, TimeUnit.SECONDS)
+                    return "<p>Reader smoke next chapter body.</p>"
+                }
+
+                providerWasCalled.set(true)
+                return buildString {
+                    repeat(40) { index ->
+                        append("<p>Reader smoke chapter body $index. ")
+                        append("A short passage verifies that QuickStream content reaches the reader adapter. ".repeat(12))
+                        append("</p>")
+                    }
+                }
+            }
+        }
+        val bookTitle = "Reader smoke ${System.currentTimeMillis()}"
+        val sessionId = QuickStreamSessionStore.create(
+            QuickStreamData(
+                meta = QuickStreamMetaData(
+                    author = "Smoke Test",
+                    name = bookTitle,
+                    apiName = provider.name,
+                ),
+                poster = null,
+                data = mutableListOf(
+                    ChapterData(
+                        name = "Chapter 1",
+                        url = "https://reader-smoke.invalid/chapter-1",
+                        dateOfRelease = null,
+                    ),
+                    ChapterData(
+                        name = "Chapter 2",
+                        url = "https://reader-smoke.invalid/chapter-2",
+                        dateOfRelease = null,
+                    ),
+                ),
+            )
+        )
+        Apis.testApisOverride = listOf(provider)
+
+        val intent = Intent(appContext, ReadActivity2::class.java).apply {
+            putExtra(QUICK_STREAM_SESSION_EXTRA, sessionId)
+            type = "quickstream"
+        }
+
+        try {
+            ActivityScenario.launch<ReadActivity2>(intent).use { scenario ->
+                // Emulator cold-start and first-run setup can take longer than a normal
+                // UI frame. Wait for the actual provider callback and rendered body.
+                // ReaderActivity performs substantial first-run setup before it starts
+                // the provider request. Give initialization its own budget so emulator
+                // cold-start time cannot consume the chapter-rendering budget.
+                val providerDeadline = SystemClock.uptimeMillis() + 120_000L
+                while (!providerWasCalled.get() && SystemClock.uptimeMillis() < providerDeadline) {
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    SystemClock.sleep(150)
+                }
+                assertTrue(
+                    "QuickStream provider was never called; reader initialization did not reach chapter download",
+                    providerWasCalled.get(),
+                )
+
+                var rendered = false
+                var adapterItems = 0
+                var readerDiagnostic = "reader views not inspected"
+                val renderDeadline = SystemClock.uptimeMillis() + 30_000L
+                while (!rendered && SystemClock.uptimeMillis() < renderDeadline) {
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    scenario.onActivity { activity ->
+                        val recycler = activity.findViewById<RecyclerView>(R.id.real_text)
+                        if (recycler != null) {
+                            adapterItems = recycler.adapter?.itemCount ?: 0
+                            val normal = activity.findViewById<View>(R.id.read_normal_layout)
+                            val loading = activity.findViewById<View>(R.id.read_loading)
+                            val failure = activity.findViewById<View>(R.id.read_fail)
+                            val failureText = activity.findViewById<TextView>(R.id.fail_text)?.text
+                            val loadingText = activity.findViewById<TextView>(R.id.loading_text)?.text
+                            val root = activity.findViewById<View>(R.id.reader_container)
+                            readerDiagnostic = "adapter=$adapterItems, children=${recycler.childCount}, " +
+                                "recyclerVisibility=${recycler.visibility}, " +
+                                "recyclerMeasured=${recycler.width}x${recycler.height}, " +
+                                "normalVisibility=${normal?.visibility}, " +
+                                "normalMeasured=${normal?.width}x${normal?.height}, " +
+                                "loadingVisibility=${loading?.visibility}, loadingText=$loadingText, " +
+                                "failureVisibility=${failure?.visibility}, failureText=$failureText, " +
+                                "rootMeasured=${root?.width}x${root?.height}, " +
+                                "providerCalled=${providerWasCalled.get()}"
+                            for (index in 0 until recycler.childCount) {
+                                if (containsText(recycler.getChildAt(index), "Reader smoke chapter body")) {
+                                    rendered = true
+                                    break
+                                }
+                            }
+                        }
+                    }
+                    if (!rendered) SystemClock.sleep(150)
+                }
+                assertTrue(
+                    "Provider was called but chapter HTML was not rendered while the next chapter was still loading ($readerDiagnostic)",
+                    rendered,
+                )
+
+                val prefetchDeadline = SystemClock.uptimeMillis() + 10_000L
+                while (!nextChapterRequestStarted.get() && SystemClock.uptimeMillis() < prefetchDeadline) {
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                    SystemClock.sleep(100)
+                }
+                assertTrue(
+                    "The reader did not begin preloading the next chapter after displaying the current one",
+                    nextChapterRequestStarted.get(),
+                )
+                releaseNextChapter.countDown()
+
+                var progressVisible = false
+                scenario.onActivity { activity ->
+                    val recycler = activity.findViewById<RecyclerView>(R.id.real_text)
+                    val progress = activity.findViewById<ProgressBar>(R.id.read_overflow_progress)
+                    progressVisible = progress?.visibility == View.VISIBLE
+                    val lastPosition = (recycler.adapter?.itemCount ?: 1) - 1
+                    if (lastPosition >= 0) recycler.scrollToPosition(lastPosition)
+                    recycler.scrollBy(0, 100_000)
+                }
+                SystemClock.sleep(500)
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                var progressAfterScroll = 0
+                var progressInBottomSlot = false
+                scenario.onActivity { activity ->
+                    val progress = activity.findViewById<ProgressBar>(R.id.read_overflow_progress)
+                    val overlay = activity.findViewById<View>(R.id.read_overlay)
+                    val root = activity.findViewById<View>(R.id.reader_container)
+                    progressAfterScroll = progress?.progress ?: 0
+                    progressInBottomSlot = progress != null && overlay != null && root != null &&
+                        progress.top >= root.height * 0.75f && progress.bottom <= overlay.top + 1
+                }
+                assertTrue(
+                    "Reader progress overlay stayed hidden after a chapter rendered",
+                    progressVisible,
+                )
+                assertTrue(
+                    "Reader progress did not advance after scrolling (progress=$progressAfterScroll)",
+                    progressAfterScroll > 0,
+                )
+                assertTrue(
+                    "Reader progress bar is not in the bottom strip above the time/battery row",
+                    progressInBottomSlot,
+                )
+            }
+        } finally {
+            releaseNextChapter.countDown()
+            Apis.testApisOverride = null
+            QuickStreamSessionStore.release(sessionId)
+        }
+    }
+
+    private fun containsText(view: View, expected: String): Boolean = when (view) {
+        is TextView -> view.text?.contains(expected) == true
+        is ViewGroup -> (0 until view.childCount).any { index ->
+            containsText(view.getChildAt(index), expected)
+        }
+        else -> false
+    }
+}

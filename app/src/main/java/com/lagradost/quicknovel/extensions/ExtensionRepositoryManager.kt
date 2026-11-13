@@ -9,6 +9,8 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URL
 import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Repository metadata and package management for LNReader-compatible extension manifests.
@@ -16,6 +18,19 @@ import java.util.Locale
  * Execution is handled separately by ExtensionJsRuntime and ExtensionMainAPI; only a
  * subset of LNReader module imports is currently supported.
  */
+/**
+ * Emits a lightweight invalidation whenever installed extension files change.
+ * ViewModels can rebuild their provider snapshots without restarting the app.
+ */
+object ExtensionProviderRegistry {
+    private val _revision = MutableStateFlow(0)
+    val revision = _revision.asStateFlow()
+
+    fun notifyChanged() {
+        _revision.value = _revision.value + 1
+    }
+}
+
 data class ExtensionListing(
     val id: String,
     val name: String,
@@ -45,6 +60,8 @@ data class InstalledExtension(
     val customCssUrl: String? = null,
     val hasSettings: Boolean = false,
     val hasUpdate: Boolean = false,
+    val customJsPath: String? = null,
+    val customCssPath: String? = null,
 )
 
 object ExtensionRepositoryManager {
@@ -52,8 +69,13 @@ object ExtensionRepositoryManager {
     private const val REPOSITORIES_KEY = "repository_urls"
     private const val EXTENSIONS_DIR = "extensions"
     private const val MAX_BUNDLE_BYTES = 8 * 1024 * 1024
+    private const val MAX_CUSTOM_ASSET_BYTES = 512 * 1024
     private const val MAX_MANIFEST_BYTES = 2 * 1024 * 1024
     private val extensionIdPattern = Regex("[A-Za-z0-9._-]{1,120}")
+
+    @Volatile
+    var lastRefreshWarning: String? = null
+        private set
 
     fun getRepositories(context: Context): List<String> =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -109,58 +131,85 @@ object ExtensionRepositoryManager {
         value != "." && value != ".." && extensionIdPattern.matches(value)
 
     fun refresh(context: Context): Result<List<ExtensionListing>> = runCatching {
+        val repositories = getRepositories(context)
         val listings = mutableListOf<ExtensionListing>()
-        getRepositories(context).forEach { repositoryUrl ->
-            val connection = openValidatedConnection(
-                repositoryUrl, 12_000, 20_000, "application/json"
-            )
-            try {
-                val status = connection.responseCode
-                if (status !in 200..299) {
-                    throw IllegalStateException("Repository returned HTTP $status: $repositoryUrl")
-                }
-                val body = connection.inputStream.use { input ->
-                    val output = ByteArrayOutputStream()
-                    val buffer = ByteArray(8192)
-                    var total = 0
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        total += count
-                        require(total <= MAX_MANIFEST_BYTES) {
-                            "Repository manifest exceeds the 2 MB limit."
-                        }
-                        output.write(buffer, 0, count)
+        val failures = mutableListOf<String>()
+        var successfulRepositories = 0
+
+        repositories.forEach { repositoryUrl ->
+            val repositoryResult = runCatching {
+                val repositoryListings = mutableListOf<ExtensionListing>()
+                val connection = openValidatedConnection(
+                    repositoryUrl, 12_000, 20_000, "application/json"
+                )
+                try {
+                    val status = connection.responseCode
+                    if (status !in 200..299) {
+                        throw IllegalStateException("Repository returned HTTP $status.")
                     }
-                    output.toString(Charsets.UTF_8.name())
+                    val body = connection.inputStream.use { input ->
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        var total = 0
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            require(total <= MAX_MANIFEST_BYTES) {
+                                "Repository manifest exceeds the 2 MB limit."
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                        output.toString(Charsets.UTF_8.name())
+                    }
+                    val array = JSONArray(body)
+                    for (index in 0 until array.length()) {
+                        val item = array.optJSONObject(index) ?: continue
+                        val id = item.optString("id").trim()
+                        val name = item.optString("name").trim()
+                        val url = item.optString("url").trim()
+                        val site = validOptionalHttpUrl(item.optString("site").trim()) ?: continue
+                        if (!isValidExtensionId(id) || name.isBlank() || !isValidBundleUrl(url)) continue
+                        repositoryListings += ExtensionListing(
+                            id = id,
+                            name = name,
+                            site = site,
+                            version = item.optString("version").trim(),
+                            language = item.optString("lang", item.optString("language", "unknown")).trim(),
+                            url = url,
+                            repositoryUrl = repositoryUrl,
+                            iconUrl = item.optString("iconUrl").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                            customJsUrl = item.optString("customJS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                            customCssUrl = item.optString("customCSS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
+                            hasSettings = item.optBoolean("hasSettings", false),
+                            hasUpdate = item.optBoolean("hasUpdate", false),
+                        )
+                    }
+                } finally {
+                    connection.disconnect()
                 }
-                val array = JSONArray(body)
-                for (index in 0 until array.length()) {
-                    val item = array.optJSONObject(index) ?: continue
-                    val id = item.optString("id").trim()
-                    val name = item.optString("name").trim()
-                    val url = item.optString("url").trim()
-                    val site = validOptionalHttpUrl(item.optString("site").trim()) ?: continue
-                    if (!isValidExtensionId(id) || name.isBlank() || !isValidBundleUrl(url)) continue
-                    listings += ExtensionListing(
-                        id = id,
-                        name = name,
-                        site = site,
-                        version = item.optString("version").trim(),
-                        language = item.optString("lang", item.optString("language", "unknown")).trim(),
-                        url = url,
-                        repositoryUrl = repositoryUrl,
-                        iconUrl = item.optString("iconUrl").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
-                        customJsUrl = item.optString("customJS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
-                        customCssUrl = item.optString("customCSS").trim().takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
-                        hasSettings = item.optBoolean("hasSettings", false),
-                        hasUpdate = item.optBoolean("hasUpdate", false),
-                    )
-                }
-            } finally {
-                connection.disconnect()
+                repositoryListings
+            }
+
+            repositoryResult.onSuccess { repositoryListings ->
+                successfulRepositories++
+                listings.addAll(repositoryListings)
+            }.onFailure { error ->
+                failures += "${repositoryUrl}: ${error.message ?: "refresh failed"}"
             }
         }
+
+        lastRefreshWarning = failures.takeIf { it.isNotEmpty() }
+            ?.joinToString("; ") { it.take(300) }
+            ?.take(1_000)
+
+        if (repositories.isNotEmpty() && successfulRepositories == 0) {
+            throw IllegalStateException(
+                failures.firstOrNull()?.take(500)
+                    ?: "Could not refresh any extension repository."
+            )
+        }
+
         listings.distinctBy { it.id }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
     }
@@ -262,6 +311,53 @@ object ExtensionRepositoryManager {
             address.isSiteLocalAddress || address.isMulticastAddress
     }
 
+    private fun downloadCustomAsset(
+        rawUrl: String,
+        label: String,
+    ): ByteArray {
+        require(isValidBundleUrl(rawUrl)) { "$label URL is not a valid public HTTP(S) URL." }
+        val connection = openValidatedConnection(
+            rawUrl,
+            15_000,
+            30_000,
+            "text/plain, application/javascript, text/javascript, text/css, */*",
+        )
+        return try {
+            val status = connection.responseCode
+            require(status in 200..299) { "$label download returned HTTP $status." }
+            val contentType = connection.contentType?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT)
+            require(
+                contentType == null ||
+                    contentType.startsWith("text/") ||
+                    contentType in setOf("application/javascript", "application/x-javascript")
+            ) { "$label download did not return a text asset." }
+            val output = ByteArrayOutputStream()
+            connection.inputStream.use { input ->
+                val buffer = ByteArray(8192)
+                var total = 0
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    require(total <= MAX_CUSTOM_ASSET_BYTES) {
+                        "$label asset exceeds the 512 KB limit."
+                    }
+                    output.write(buffer, 0, count)
+                }
+            }
+            output.toByteArray().also { bytes ->
+                require(bytes.isNotEmpty()) { "$label asset is empty." }
+                val decoded = String(bytes, Charsets.UTF_8)
+                require(!decoded.trimStart().startsWith("<!DOCTYPE", ignoreCase = true) &&
+                    !decoded.trimStart().startsWith("<html", ignoreCase = true)) {
+                    "$label download returned an HTML page, not a text asset."
+                }
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     /**
      * Downloads an extension bundle into private app storage. The file is not executed
      * by this method; execution must go through the dedicated runtime/adapter.
@@ -308,8 +404,13 @@ object ExtensionRepositoryManager {
         }
         require(bundleBytes.isNotEmpty()) { "Downloaded extension bundle is empty." }
 
+        val customJsBytes = listing.customJsUrl?.let { downloadCustomAsset(it, "Custom JavaScript") }
+        val customCssBytes = listing.customCssUrl?.let { downloadCustomAsset(it, "Custom CSS") }
+
         val bundleFile = File(extensionDir, "plugin.js")
         val metadataFile = File(extensionDir, "manifest.json")
+        val customJsFile = File(extensionDir, "custom.js")
+        val customCssFile = File(extensionDir, "custom.css")
         val manifest = JSONObject()
             .put("id", listing.id)
             .put("name", listing.name)
@@ -326,19 +427,28 @@ object ExtensionRepositoryManager {
 
         val tempBundle = File(extensionDir, "plugin.js.tmp")
         val tempMetadata = File(extensionDir, "manifest.json.tmp")
+        val tempCustomJs = File(extensionDir, "custom.js.tmp")
+        val tempCustomCss = File(extensionDir, "custom.css.tmp")
         val backupBundle = File(extensionDir, "plugin.js.bak")
         val backupMetadata = File(extensionDir, "manifest.json.bak")
+        val backupCustomJs = File(extensionDir, "custom.js.bak")
+        val backupCustomCss = File(extensionDir, "custom.css.bak")
 
-        // Stage both new files before touching the currently installed version.
+        // Stage every new asset before touching the currently installed version.
         tempBundle.writeBytes(bundleBytes)
         tempMetadata.writeText(manifest.toString())
-        backupBundle.delete()
-        backupMetadata.delete()
+        customJsBytes?.let(tempCustomJs::writeBytes)
+        customCssBytes?.let(tempCustomCss::writeBytes)
+        listOf(backupBundle, backupMetadata, backupCustomJs, backupCustomCss).forEach(File::delete)
 
         var bundleBackedUp = false
         var metadataBackedUp = false
+        var customJsBackedUp = false
+        var customCssBackedUp = false
         var newBundleInstalled = false
         var newMetadataInstalled = false
+        var newCustomJsInstalled = false
+        var newCustomCssInstalled = false
         try {
             if (bundleFile.exists()) {
                 if (!bundleFile.renameTo(backupBundle)) {
@@ -352,6 +462,18 @@ object ExtensionRepositoryManager {
                 }
                 metadataBackedUp = true
             }
+            if (customJsFile.exists()) {
+                if (!customJsFile.renameTo(backupCustomJs)) {
+                    throw IllegalStateException("Could not preserve the previous custom JavaScript asset.")
+                }
+                customJsBackedUp = true
+            }
+            if (customCssFile.exists()) {
+                if (!customCssFile.renameTo(backupCustomCss)) {
+                    throw IllegalStateException("Could not preserve the previous custom CSS asset.")
+                }
+                customCssBackedUp = true
+            }
             if (!tempBundle.renameTo(bundleFile)) {
                 throw IllegalStateException("Could not save the new extension bundle.")
             }
@@ -360,18 +482,32 @@ object ExtensionRepositoryManager {
                 throw IllegalStateException("Could not save the new extension metadata.")
             }
             newMetadataInstalled = true
+            if (customJsBytes != null) {
+                if (!tempCustomJs.renameTo(customJsFile)) {
+                    throw IllegalStateException("Could not save the extension's custom JavaScript asset.")
+                }
+                newCustomJsInstalled = true
+            }
+            if (customCssBytes != null) {
+                if (!tempCustomCss.renameTo(customCssFile)) {
+                    throw IllegalStateException("Could not save the extension's custom CSS asset.")
+                }
+                newCustomCssInstalled = true
+            }
         } catch (error: Exception) {
             if (newBundleInstalled) bundleFile.delete()
             if (newMetadataInstalled) metadataFile.delete()
+            if (newCustomJsInstalled) customJsFile.delete()
+            if (newCustomCssInstalled) customCssFile.delete()
             if (bundleBackedUp) backupBundle.renameTo(bundleFile)
             if (metadataBackedUp) backupMetadata.renameTo(metadataFile)
+            if (customJsBackedUp) backupCustomJs.renameTo(customJsFile)
+            if (customCssBackedUp) backupCustomCss.renameTo(customCssFile)
             throw error
         } finally {
-            tempBundle.delete()
-            tempMetadata.delete()
+            listOf(tempBundle, tempMetadata, tempCustomJs, tempCustomCss).forEach(File::delete)
         }
-        backupBundle.delete()
-        backupMetadata.delete()
+        listOf(backupBundle, backupMetadata, backupCustomJs, backupCustomCss).forEach(File::delete)
 
         InstalledExtension(
             id = listing.id,
@@ -387,7 +523,9 @@ object ExtensionRepositoryManager {
             customCssUrl = listing.customCssUrl,
             hasSettings = listing.hasSettings,
             hasUpdate = listing.hasUpdate,
-        )
+            customJsPath = customJsFile.takeIf { customJsBytes != null && it.isFile }?.absolutePath,
+            customCssPath = customCssFile.takeIf { customCssBytes != null && it.isFile }?.absolutePath,
+        ).also { ExtensionProviderRegistry.notifyChanged() }
     }
 
     fun getInstalledExtensions(context: Context): List<InstalledExtension> {
@@ -413,6 +551,8 @@ object ExtensionRepositoryManager {
                     customCssUrl = json.optString("customCSS").takeIf { it.isNotBlank() }?.let(::validOptionalHttpUrl),
                     hasSettings = json.optBoolean("hasSettings", false),
                     hasUpdate = json.optBoolean("hasUpdate", false),
+                    customJsPath = File(directory, "custom.js").takeIf { it.isFile }?.absolutePath,
+                    customCssPath = File(directory, "custom.css").takeIf { it.isFile }?.absolutePath,
                 )
             }.getOrNull()
         }.filterNotNull().sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
@@ -421,6 +561,11 @@ object ExtensionRepositoryManager {
     fun uninstall(context: Context, id: String): Boolean {
         if (!isValidExtensionId(id)) return false
         val directory = File(File(context.filesDir, EXTENSIONS_DIR), id)
-        return !directory.exists() || directory.deleteRecursively()
+        val removed = !directory.exists() || directory.deleteRecursively()
+        if (removed) {
+            ExtensionJsRuntime.clearExtensionData(context, id)
+            ExtensionProviderRegistry.notifyChanged()
+        }
+        return removed
     }
 }
