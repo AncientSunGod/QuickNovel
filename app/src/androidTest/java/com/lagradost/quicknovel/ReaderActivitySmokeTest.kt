@@ -42,9 +42,9 @@ class ReaderActivitySmokeTest {
 
                 providerWasCalled.set(true)
                 return buildString {
-                    repeat(6) { index ->
+                    repeat(40) { index ->
                         append("<p>Reader smoke chapter body $index. ")
-                        append("A short passage verifies that QuickStream content reaches the reader adapter. ".repeat(2))
+                        append("A short passage verifies that QuickStream content reaches the reader adapter. ".repeat(12))
                         append("</p>")
                     }
                 }
